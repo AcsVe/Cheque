@@ -18,8 +18,9 @@ jobs:
       - name: Install
         run: pip install -r requirements-dev.txt
       - name: Tests
+        timeout-minutes: 10
         env: { QT_QPA_PLATFORM: offscreen }
-        run: python -m pytest -q tests
+        run: python -m pytest -v tests
       - name: Version
         id: v
         shell: bash
@@ -27,6 +28,7 @@ jobs:
       - name: PyInstaller
         run: pyinstaller --noconfirm ChequePrinter.spec
       - name: Smoke test of the built program
+        timeout-minutes: 5
         shell: pwsh
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
