@@ -1,0 +1,50 @@
+name: Build ChequePrinter (exe + installer)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write          # publish to the "latest" release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install
+        run: pip install -r requirements-dev.txt
+      - name: Tests
+        env: { QT_QPA_PLATFORM: offscreen }
+        run: python -m pytest -q tests
+      - name: Version
+        id: v
+        shell: bash
+        run: echo "version=$(python -c 'import cheque_app; print(cheque_app.__version__)')" >> "$GITHUB_OUTPUT"
+      - name: PyInstaller
+        run: pyinstaller --noconfirm ChequePrinter.spec
+      - name: Smoke test of the built program
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process -FilePath dist\ChequePrinter\ChequePrinter.exe -ArgumentList "--selftest", "selftest.txt" -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=${{ steps.v.outputs.version }}" installer\ChequePrinter.iss
+      - uses: actions/upload-artifact@v4
+        with: { name: ChequePrinterSetup, path: dist/ChequePrinterSetup.exe }
+      - name: Publish to the fixed download link
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          gh release view latest >/dev/null 2>&1 || gh release create latest --title "ChequePrinter — آخر إصدار" --notes "يتحدّث تلقائياً مع كل بناء. حمِّل ChequePrinterSetup.exe وشغّله."
+          gh release upload latest dist/ChequePrinterSetup.exe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
