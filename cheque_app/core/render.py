@@ -65,7 +65,7 @@ def split_words(text, font, width_px, device=None):
 
 
 def draw_cheque(p, tpl, values, origin_mm=(0.0, 0.0), px_per_mm=1.0, frame=False, background=None, ink=None,
-                highlight=None):
+                highlight=None, simulate=False):
     """Paint on QPainter ``p``. ``px_per_mm`` converts mm to the device; fonts are scaled so a 10 pt field is
     10 pt on paper whatever the device."""
     ox, oy = origin_mm
@@ -77,6 +77,8 @@ def draw_cheque(p, tpl, values, origin_mm=(0.0, 0.0), px_per_mm=1.0, frame=False
     p.setRenderHint(QPainter.TextAntialiasing)
     if background is not None and not background.isNull():
         p.drawImage(rect, background)
+    elif simulate:
+        draw_simulation(p, tpl, origin_mm, px_per_mm)
     if frame:
         p.setPen(QPen(QColor('#9aa4b2'), max(1.0, 0.2 * k), Qt.DashLine))
         p.drawRect(rect)
@@ -232,3 +234,89 @@ def page_size_mm(tpl):
     cw, ch = float(tpl['width_mm']), float(tpl['height_mm'])
     rot = int((tpl.get('feed') or {}).get('rotate') or 0) % 360
     return (ch, cw) if rot in (90, 270) else (cw, ch)
+
+
+def draw_simulation(p, tpl, origin_mm, px_per_mm):
+    """A drawn face of a blank cheque, for the ON-SCREEN preview only (never printed — the real cheque already
+    has it). Its labels follow the calibrated fields, so the preview shows where each value lands."""
+    from PySide6.QtGui import QLinearGradient
+    ox, oy = origin_mm
+    k = px_per_mm
+    w_mm, h_mm = float(tpl['width_mm']), float(tpl['height_mm'])
+    f = tpl['fields']
+    dpi = p.device().logicalDpiY() if p.device() else 96
+    scale = k * 25.4 / dpi
+
+    def R(x, y, w, h):
+        return QRectF((ox + x) * k, (oy + y) * k, w * k, h * k)
+
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing)
+    g = QLinearGradient(R(0, 0, w_mm, h_mm).topLeft(), R(0, 0, w_mm, h_mm).bottomRight())
+    g.setColorAt(0, QColor('#fff6ec'))
+    g.setColorAt(0.5, QColor('#fbeff3'))
+    g.setColorAt(1, QColor('#f3eefb'))
+    p.fillRect(R(0, 0, w_mm, h_mm), g)
+    band_y = max(4.0, float(f.get('date', {}).get('y', 22)) - 5)
+    p.fillRect(R(0, band_y, w_mm, 1.6), QColor('#f08a24'))
+    p.setPen(QPen(QColor('#c9ced8'), max(1.0, 0.3 * k)))
+    p.drawRoundedRect(R(3, 2, 32, 10), 2 * k, 2 * k)
+    p.drawRoundedRect(R(w_mm - 35, 2, 32, 10), 2 * k, 2 * k)
+    font = QFont('Arial')
+    font.setPointSizeF(7.5 * scale)
+    font.setBold(True)
+    p.setFont(font)
+    label = QColor('#3b3b4f')
+
+    def lab(text, x, y, w=30, align=Qt.AlignLeft):
+        p.setPen(label)
+        p.drawText(R(x, y, w, 5), int(align | Qt.AlignVCenter), text)
+
+    def line(x, y, w):
+        p.setPen(QPen(QColor('#8c93a3'), max(1.0, 0.25 * k)))
+        p.drawLine(R(x, y, w, 0).topLeft(), R(x, y, w, 0).topRight())
+
+    d = f.get('date', {})
+    lab('Date', 3, float(d.get('y', 22)) + 1, 15)
+    lab('التاريخ', float(d.get('x', 20)) + float(d.get('w', 36)) + 1, float(d.get('y', 22)) + 1, 15)
+    pay = f.get('payee', {})
+    py = float(pay.get('y', 34))
+    lab('Pay Against This Cheque', 3, py - 5.5, 50)
+    lab('ادفعوا بموجب هذا الشيك', w_mm - 53, py - 5.5, 50, Qt.AlignRight)
+    lab('To', 3, py + 1, 10)
+    lab('لأمر', w_mm - 13, py + 1, 10, Qt.AlignRight)
+    line(10, py + 6.5, w_mm - 24)
+    w1 = f.get('words1', {})
+    wy = float(w1.get('y', 44))
+    lab('The Sum Of', 3, wy + 1, 22)
+    lab('مبلغ وقدره', float(w1.get('x', 30)) + float(w1.get('w', 100)) + 1, wy + 1, 20)
+    line(float(w1.get('x', 30)), wy + 6.5, float(w1.get('w', 100)))
+    w2 = f.get('words2', {})
+    line(float(w2.get('x', 10)), float(w2.get('y', 52)) + 6.5, float(w2.get('w', 112)))
+    ad, af = f.get('amount_dinar', {}), f.get('amount_fils', {})
+    if ad.get('visible', True) or af.get('visible', True):
+        x0 = float(ad.get('x', 128)) - 1
+        x1 = float(af.get('x', 156)) + float(af.get('w', 13)) + 1
+        y0 = float(ad.get('y', 48)) - 5
+        p.setPen(QPen(QColor('#6b6f85'), max(1.0, 0.35 * k)))
+        p.drawRect(R(x0, y0, x1 - x0, 13))
+        p.drawLine(R(float(af.get('x', 156)) - 1, y0, 0, 13).topLeft(), R(float(af.get('x', 156)) - 1, y0, 0, 13).bottomLeft())
+        small = QFont(font)
+        small.setPointSizeF(6.5 * scale)
+        p.setFont(small)
+        lab('J.D.   دينار', float(ad.get('x', 128)), y0 + 0.2, float(ad.get('w', 26)), Qt.AlignHCenter)
+        lab('Fils  فلس', float(af.get('x', 156)) - 1, y0 + 0.2, float(af.get('w', 13)) + 2, Qt.AlignHCenter)
+        p.setFont(font)
+    sy = h_mm - 12
+    lab('التوقيع', 3, sy - 4, 20)
+    lab('Sign', 3, sy, 20)
+    line(22, sy + 4, 45)
+    line(w_mm - 60, sy + 4, 45)
+    p.setPen(QColor('#9aa0ad'))
+    small = QFont(font)
+    small.setPointSizeF(5.5 * scale)
+    small.setBold(False)
+    p.setFont(small)
+    p.drawText(R(0, h_mm - 4.5, w_mm, 4), int(Qt.AlignHCenter | Qt.AlignVCenter),
+               'Please do not write under this line — الرجاء عدم الكتابة تحت هذا الخط')
+    p.restore()

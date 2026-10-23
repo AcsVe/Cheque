@@ -47,8 +47,9 @@ class ChequePreview(QWidget):
         ox = (self.width() / k - w_mm) / 2
         oy = (self.height() / k - h_mm) / 2
         p.fillRect(int(ox * k), int(oy * k), int(w_mm * k), int(h_mm * k), QColor('#fffaf3'))
+        # on screen only: the bank's scanned blank cheque, else a drawn cheque face — the printer prints the data only
         draw_cheque(p, self.tpl, self.values, (ox, oy), k, frame=True, background=self.bg,
-                    ink='#0b2a6b', highlight=self.highlight)
+                    ink='#0b2a6b', highlight=self.highlight, simulate=True)
         p.end()
 
 
