@@ -184,6 +184,10 @@ class LicenseState:
         return L('انتهت الفترة التجريبية — الطباعة متوقفة', 'The trial is over — printing is locked')
 
 
+def _use_registry():
+    return IS_WIN and not os.environ.get('CHEQUE_TEST')    # tests never touch the build machine's registry
+
+
 def _trial_start(data_dir, today=None):
     """First run date, kept in the data folder and (on Windows) the registry, so deleting one does not reset it."""
     stamp = os.path.join(data_dir, '.first_run')
@@ -192,7 +196,7 @@ def _trial_start(data_dir, today=None):
         found.append(date.fromisoformat(open(stamp, encoding='utf-8').read().strip()))
     except (OSError, ValueError):
         pass
-    if IS_WIN:
+    if _use_registry():
         try:
             import winreg
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\ChequePrinter') as k:
@@ -206,7 +210,7 @@ def _trial_start(data_dir, today=None):
             f.write(start.isoformat())
     except OSError:
         pass
-    if IS_WIN:
+    if _use_registry():
         try:
             import winreg
             with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\ChequePrinter') as k:
