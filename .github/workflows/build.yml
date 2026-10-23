@@ -22,11 +22,16 @@ jobs:
         env: { QT_QPA_PLATFORM: offscreen, PYTHONFAULTHANDLER: '1' }
         shell: bash
         run: python -m pytest -v -p no:cacheprovider tests 2>&1 | tee pytest.log; exit ${PIPESTATUS[0]}
-      - name: Test report (as annotations, readable without the log)
+      - name: Test report (one annotation, readable without the log)
         if: failure()
         shell: bash
         run: |
-          grep -E "PASSED|FAILED|ERROR|Timeout|File \"|Error|assert" pytest.log | tail -45 | while IFS= read -r l; do echo "::error::${l//%/%25}"; done
+          python - <<'PY'
+          text = open('pytest.log', encoding='utf-8', errors='replace').read()
+          i = text.find('Timeout +++')
+          part = text[max(0, i - 200):i + 6000] if i >= 0 else text[-6000:]
+          print('::error::' + part.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
+          PY
       - name: Version
         id: v
         shell: bash
