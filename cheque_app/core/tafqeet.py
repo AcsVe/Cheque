@@ -120,7 +120,7 @@ def split_amount(amount, per=1000):
     return whole, sub
 
 
-def words_ar(amount, currency='JOD', sub_as_digits=False, prefix='فقط', suffix='لا غير'):
+def words_ar(amount, currency='JOD', sub_as_digits=False, prefix='فقط', suffix='لا غير', hundred='مئة'):
     cur = CURRENCIES.get(currency, CURRENCIES['JOD'])
     whole, sub = split_amount(amount, cur['per'])
     parts = []
@@ -136,6 +136,8 @@ def words_ar(amount, currency='JOD', sub_as_digits=False, prefix='فقط', suffi
     if not parts:
         parts.append(f'صفر {cur["unit"][0]}')
     text = ' و'.join(parts)
+    if hundred == 'مائة':           # the older spelling many banks still print: مائة، مائتان، خمسمائة
+        text = text.replace('مئ', 'مائ')
     return ' '.join(p for p in (prefix, text, suffix) if p)
 
 
@@ -169,7 +171,7 @@ def number_en(n):
     return ' '.join(out)
 
 
-def words_en(amount, currency='JOD', sub_as_digits=False, prefix='', suffix='Only'):
+def words_en(amount, currency='JOD', sub_as_digits=False, prefix='', suffix='Only', hundred=None):
     cur = CURRENCIES.get(currency, CURRENCIES['JOD'])
     whole, sub = split_amount(amount, cur['per'])
     one, many, sub1, subn = cur['en']

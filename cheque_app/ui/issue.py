@@ -223,7 +223,7 @@ class IssueTab(QWidget):
         if not tpl or a is None or a <= 0:
             return ''
         return amount_words(a, tpl.get('words_lang', 'ar'), currency=acc['currency'],
-                            sub_as_digits=tpl.get('sub_as_digits', False))
+                            sub_as_digits=tpl.get('sub_as_digits', False), hundred=tpl.get('hundred', 'مئة'))
 
     def crossing_key(self):
         b = self.crossing.checkedButton()
@@ -245,7 +245,10 @@ class IssueTab(QWidget):
     def refresh_preview(self, *_):
         tpl, bank, values = self._values()
         if tpl:
-            self.preview_w.show_cheque(tpl, values, load_background(bank.get('background')))
+            acc = self.db.account(self.account.currentData())
+            self.preview_w.show_cheque(tpl, values, load_background(bank.get('background')),
+                                       labels={'bank': bank.get('name'), 'holder': acc.get('name') if acc else '',
+                                               'account': acc.get('number') if acc else ''})
 
     def _status(self, text, warn=False):
         self.status.setText(text)

@@ -82,10 +82,20 @@ class TemplateEditor(QDialog):
         self.sub_digits = QCheckBox(L('الفلوس بالأرقام (و750 فلسًا)', 'Fils as digits (and 750/1000)'))
         self.sub_digits.setChecked(bool(self.tpl.get('sub_as_digits')))
         self.date_fmt = QComboBox()
-        for f in ('dd/MM/yyyy', 'dd-MM-yyyy', 'yyyy/MM/dd', 'ddMMyyyy', 'dd / MM / yyyy'):
+        for f in ('yyyy/MM/dd', 'dd/MM/yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'ddMMyyyy', 'dd / MM / yyyy'):
             self.date_fmt.addItem(f, f)
         self.date_fmt.setEditable(True)
-        self.date_fmt.setCurrentText(self.tpl.get('date_format') or 'dd/MM/yyyy')
+        self.date_fmt.setCurrentText(self.tpl.get('date_format') or 'yyyy/MM/dd')
+        self.hundred = QComboBox()
+        self.hundred.addItem('مئة — ثلاثمئة، مئتان', 'مئة')
+        self.hundred.addItem('مائة — ثلاثمائة، مائتان', 'مائة')
+        self.hundred.setCurrentIndex(max(0, self.hundred.findData(self.tpl.get('hundred', 'مئة'))))
+        self.digits = QComboBox()
+        self.digits.addItem(L('أرقام 1250', 'Digits 1250'), 'latin')
+        self.digits.addItem(L('أرقام عربية ١٢٥٠', 'Arabic-Indic digits ١٢٥٠'), 'arabic')
+        self.digits.setCurrentIndex(max(0, self.digits.findData(self.tpl.get('digits', 'latin'))))
+        self.zero_fils = QLineEdit(self.tpl.get('zero_fils') if self.tpl.get('zero_fils') is not None else '---')
+        self.zero_fils.setToolTip(L('ما يُكتب في خانة الفلوس إن لم توجد فلوس، مثل --- أو 000', 'Shown in the fils box when there are no fils, e.g. --- or 000'))
         self.wrap = QLineEdit(self.tpl.get('amount_wrap') or '#{}#')
         self.wrap.setToolTip(L('{} مكان الرقم، مثل #{}# أو **{}**', '{} is the figure, e.g. #{}# or **{}**'))
         self.thousands = QCheckBox(L('فاصل الآلاف (1,250)', 'Thousands separator (1,250)'))
@@ -120,6 +130,9 @@ class TemplateEditor(QDialog):
         gen.addRow(L('المبلغ كتابةً', 'Amount in words'), self.words_lang)
         gen.addRow('', self.sub_digits)
         gen.addRow(L('صيغة التاريخ', 'Date format'), self.date_fmt)
+        gen.addRow(L('كتابة المئات', 'Spelling of hundreds'), self.hundred)
+        gen.addRow(L('الأرقام المطبوعة', 'Printed figures'), self.digits)
+        gen.addRow(L('خانة الفلوس عند عدم وجودها', 'Fils box when zero'), self.zero_fils)
         gen.addRow(L('إطار رقم الدنانير', 'Around the dinars figure'), self.wrap)
         gen.addRow('', self.thousands)
         bg = QPushButton(L('تحميل صورة الشيك الفارغ (للمعاينة فقط)', 'Load a scan of the blank cheque (preview only)'))
@@ -197,13 +210,14 @@ class TemplateEditor(QDialog):
 
         for w in (self.width, self.height, self.off_x, self.off_y):
             w.valueChanged.connect(self._general_edited)
-        for w in (self.words_lang, self.paper, self.rotate, self.align):
+        for w in (self.words_lang, self.paper, self.rotate, self.align, self.hundred, self.digits):
             w.currentIndexChanged.connect(self._general_edited)
         for w in (self.sub_digits, self.thousands):
             w.toggled.connect(self._general_edited)
         self.font.currentFontChanged.connect(self._general_edited)
         self.date_fmt.currentTextChanged.connect(self._general_edited)
         self.wrap.textChanged.connect(self._general_edited)
+        self.zero_fils.textChanged.connect(self._general_edited)
 
         right = QWidget()
         rl = QVBoxLayout(right)
@@ -343,8 +357,10 @@ class TemplateEditor(QDialog):
         resized = (t['width_mm'], t['height_mm']) != (self.width.value(), self.height.value())
         t.update({'width_mm': self.width.value(), 'height_mm': self.height.value(),
                   'font': self.font.currentFont().family(), 'words_lang': self.words_lang.currentData(),
-                  'sub_as_digits': self.sub_digits.isChecked(), 'date_format': self.date_fmt.currentText().strip() or 'dd/MM/yyyy',
-                  'amount_wrap': self.wrap.text() or '{}', 'thousands': self.thousands.isChecked()})
+                  'sub_as_digits': self.sub_digits.isChecked(), 'date_format': self.date_fmt.currentText().strip() or 'yyyy/MM/dd',
+                  'amount_wrap': self.wrap.text() or '{}', 'thousands': self.thousands.isChecked(),
+                  'hundred': self.hundred.currentData(), 'digits': self.digits.currentData(),
+                  'zero_fils': self.zero_fils.text()})
         t['feed'] = {'paper': self.paper.currentData(), 'rotate': self.rotate.currentData(),
                      'align': self.align.currentData(), 'offset_x': self.off_x.value(), 'offset_y': self.off_y.value()}
         if resized:
@@ -388,7 +404,8 @@ class TemplateEditor(QDialog):
         return cheque_values(self.tpl, SAMPLE, self.ctx.crossing_texts())
 
     def _refresh_preview(self):
-        self.preview.show_cheque(self.tpl, self._values(), load_background(self.background))
+        self.preview.show_cheque(self.tpl, self._values(), load_background(self.background),
+                                 labels={'bank': self.name.text().strip(), 'holder': 'اسم صاحب الحساب'})
 
     def _print(self, calibration):
         print_jobs(self, [(copy.deepcopy(self.tpl), self._values())], self.db.get, self.db.set, calibration=calibration)

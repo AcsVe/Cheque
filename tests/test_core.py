@@ -28,6 +28,8 @@ def test_words_ar(amount, text):
 
 
 def test_words_misc():
+    assert words_ar('300', hundred='مائة') == 'فقط ثلاثمائة دينار لا غير'
+    assert words_ar('200', hundred='مائة') == 'فقط مائتا دينار لا غير'
     assert number_ar(21) == 'واحد وعشرون'
     assert number_ar(3500) == 'ثلاثة آلاف وخمسمئة'
     assert words_ar('1250.750', sub_as_digits=True) == 'فقط ألف ومئتان وخمسون دينارًا و750 فلسًا لا غير'
@@ -150,4 +152,8 @@ def test_render_pdf(tmp_path):
         paint_page(p, w, h, 300 / 25.4, t, v)
         p.end()
         assert (tmp_path / f'c{rot}.pdf').stat().st_size > 1000
-    assert v['amount_dinar'] == '#1250#' and v['amount_fils'] == '750' and v['date'] == '25/06/2026'
+    assert v['amount_dinar'] == '#1250#' and v['amount_fils'] == '750' and v['date'] == '2026/06/25'
+    t.update({'digits': 'arabic', 'hundred': 'مائة'})
+    v = cheque_values(t, {'cheque_date': '2026-03-19', 'payee': 'x', 'amount': '500000', 'crossing': 'first'})
+    assert v['amount_dinar'] == '#٥٠٠٠٠٠#' and v['amount_fils'] == '---' and v['date'] == '٢٠٢٦/٠٣/١٩'
+    assert v['words'] == 'فقط خمسمائة ألف دينار لا غير'

@@ -21,24 +21,27 @@ _DEFAULT = {
     'font': 'Arial',
     'words_lang': 'ar',             # amount in words: 'ar' | 'en'
     'sub_as_digits': False,         # «و750 فلسًا» instead of words
-    'date_format': 'dd/MM/yyyy',
+    'date_format': 'yyyy/MM/dd',
     'amount_wrap': '#{}#',          # around the dinars figure
     'thousands': False,             # 1,250 instead of 1250
+    'hundred': 'مئة',               # spelling in words: 'مئة' (ثلاثمئة) | 'مائة' (ثلاثمائة)
+    'digits': 'latin',              # figures on the cheque: 'latin' 1250 | 'arabic' ١٢٥٠
+    'zero_fils': '---',             # what the fils box shows when there are no fils
     # how the printer takes the cheque: paper = 'cheque' (its own size, manual feed) | 'A4' | 'Letter';
     # rotate = 0 (fed lengthwise, «أفقي») | 90 / 270 (fed short edge first, «عامودي»)
     'feed': {'paper': 'cheque', 'rotate': 0, 'align': 'center', 'offset_x': 0.0, 'offset_y': 0.0},
     'fields': {
-        'date':         {'x': 20.0, 'y': 22.0, 'w': 36.0, 'size': 11, 'align': 'center', 'bold': False, 'visible': True,
+        'date':         {'x': 17.0, 'y': 17.0, 'w': 40.0, 'size': 11, 'align': 'center', 'bold': True, 'visible': True,
                          'spacing': 0.0},
-        'payee':        {'x': 22.0, 'y': 34.0, 'w': 128.0, 'size': 12, 'align': 'center', 'bold': True, 'visible': True},
-        'words1':       {'x': 28.0, 'y': 44.0, 'w': 80.0, 'size': 10, 'align': 'right', 'bold': False, 'visible': True},
-        'words2':       {'x': 10.0, 'y': 52.0, 'w': 112.0, 'size': 10, 'align': 'right', 'bold': False, 'visible': True},
-        'amount_dinar': {'x': 134.0, 'y': 48.0, 'w': 22.0, 'size': 12, 'align': 'center', 'bold': True, 'visible': True},
-        'amount_fils':  {'x': 158.0, 'y': 48.0, 'w': 12.0, 'size': 12, 'align': 'center', 'bold': True, 'visible': True},
-        'amount_full':  {'x': 134.0, 'y': 48.0, 'w': 36.0, 'size': 12, 'align': 'center', 'bold': True, 'visible': False},
-        'crossing':     {'x': 66.0, 'y': 3.0, 'w': 50.0, 'h': 11.0, 'size': 10, 'align': 'center', 'bold': True,
+        'payee':        {'x': 12.0, 'y': 30.0, 'w': 150.0, 'size': 12, 'align': 'center', 'bold': True, 'visible': True},
+        'words1':       {'x': 26.0, 'y': 38.0, 'w': 78.0, 'size': 10, 'align': 'right', 'bold': True, 'visible': True},
+        'words2':       {'x': 8.0, 'y': 46.0, 'w': 114.0, 'size': 10, 'align': 'right', 'bold': True, 'visible': True},
+        'amount_dinar': {'x': 127.0, 'y': 44.0, 'w': 26.0, 'size': 12, 'align': 'center', 'bold': True, 'visible': True},
+        'amount_fils':  {'x': 154.0, 'y': 44.0, 'w': 16.0, 'size': 12, 'align': 'center', 'bold': True, 'visible': True},
+        'amount_full':  {'x': 127.0, 'y': 44.0, 'w': 43.0, 'size': 12, 'align': 'center', 'bold': True, 'visible': False},
+        'crossing':     {'x': 66.0, 'y': 8.0, 'w': 50.0, 'h': 9.0, 'size': 10, 'align': 'center', 'bold': True,
                          'visible': True, 'angle': 0.0},
-        'memo':         {'x': 10.0, 'y': 66.0, 'w': 90.0, 'size': 8, 'align': 'right', 'bold': False, 'visible': False},
+        'memo':         {'x': 8.0, 'y': 54.0, 'w': 110.0, 'size': 9, 'align': 'right', 'bold': False, 'visible': False},
         'cheque_no':    {'x': 140.0, 'y': 70.0, 'w': 30.0, 'size': 9, 'align': 'center', 'bold': False, 'visible': False},
     },
 }

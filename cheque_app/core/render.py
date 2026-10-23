@@ -22,20 +22,26 @@ def cheque_values(tpl, data, crossing_texts=None):
     d = data.get('cheque_date')
     qd = d if isinstance(d, QDate) else QDate.fromString(str(d or ''), 'yyyy-MM-dd')
     words = data.get('words') or (amount_words(amount, tpl.get('words_lang', 'ar'), currency=cur,
-                                               sub_as_digits=tpl.get('sub_as_digits', False)) if amount else '')
+                                               sub_as_digits=tpl.get('sub_as_digits', False),
+                                               hundred=tpl.get('hundred', 'مئة')) if amount else '')
     texts = dict(CROSSING_TEXT)
     texts.update(crossing_texts or {})
     digits = 3 if per == 1000 else 2
+    ar = tpl.get('digits') == 'arabic'
+
+    def fig(text):
+        return text.translate(str.maketrans('0123456789', '٠١٢٣٤٥٦٧٨٩')) if ar else text
+    fils = (f'{sub:0{digits}d}' if sub else (tpl.get('zero_fils') if tpl.get('zero_fils') is not None else '---')) if amount else ''
     return {
-        'date': qd.toString(tpl.get('date_format') or 'dd/MM/yyyy') if qd.isValid() else '',
+        'date': fig(qd.toString(tpl.get('date_format') or 'yyyy/MM/dd')) if qd.isValid() else '',
         'payee': data.get('payee') or '',
         'words': words,
-        'amount_dinar': wrap.replace('{}', dinars) if amount else '',
-        'amount_fils': f'{sub:0{digits}d}' if amount else '',
-        'amount_full': wrap.replace('{}', f'{dinars}.{sub:0{digits}d}') if amount else '',
+        'amount_dinar': fig(wrap.replace('{}', dinars)) if amount else '',
+        'amount_fils': fig(fils),
+        'amount_full': fig(wrap.replace('{}', f'{dinars}.{sub:0{digits}d}')) if amount else '',
         'crossing': texts.get(data.get('crossing') or 'none', ''),
         'memo': data.get('memo') or '',
-        'cheque_no': str(data.get('cheque_no') or ''),
+        'cheque_no': fig(str(data.get('cheque_no') or '')),
     }
 
 
@@ -65,7 +71,7 @@ def split_words(text, font, width_px, device=None):
 
 
 def draw_cheque(p, tpl, values, origin_mm=(0.0, 0.0), px_per_mm=1.0, frame=False, background=None, ink=None,
-                highlight=None, simulate=False):
+                highlight=None, simulate=False, labels=None):
     """Paint on QPainter ``p``. ``px_per_mm`` converts mm to the device; fonts are scaled so a 10 pt field is
     10 pt on paper whatever the device."""
     ox, oy = origin_mm
@@ -78,7 +84,7 @@ def draw_cheque(p, tpl, values, origin_mm=(0.0, 0.0), px_per_mm=1.0, frame=False
     if background is not None and not background.isNull():
         p.drawImage(rect, background)
     elif simulate:
-        draw_simulation(p, tpl, origin_mm, px_per_mm)
+        draw_simulation(p, tpl, origin_mm, px_per_mm, labels)
     if frame:
         p.setPen(QPen(QColor('#9aa4b2'), max(1.0, 0.2 * k), Qt.DashLine))
         p.drawRect(rect)
@@ -236,10 +242,12 @@ def page_size_mm(tpl):
     return (ch, cw) if rot in (90, 270) else (cw, ch)
 
 
-def draw_simulation(p, tpl, origin_mm, px_per_mm):
-    """A drawn face of a blank cheque, for the ON-SCREEN preview only (never printed — the real cheque already
-    has it). Its labels follow the calibrated fields, so the preview shows where each value lands."""
+def draw_simulation(p, tpl, origin_mm, px_per_mm, labels=None):
+    """A drawn face of a Jordanian bank cheque, for the ON-SCREEN preview only — never printed, the real cheque
+    already carries it. Its labels follow the calibrated fields, so the preview shows where each value lands.
+    labels: {'bank', 'holder', 'account'} from the chosen account."""
     from PySide6.QtGui import QLinearGradient
+    labels = labels or {}
     ox, oy = origin_mm
     k = px_per_mm
     w_mm, h_mm = float(tpl['width_mm']), float(tpl['height_mm'])
@@ -247,76 +255,103 @@ def draw_simulation(p, tpl, origin_mm, px_per_mm):
     dpi = p.device().logicalDpiY() if p.device() else 96
     scale = k * 25.4 / dpi
 
+    def g(key, attr, default):
+        return float((f.get(key) or {}).get(attr, default) or default)
+
     def R(x, y, w, h):
         return QRectF((ox + x) * k, (oy + y) * k, w * k, h * k)
 
-    p.save()
-    p.setRenderHint(QPainter.Antialiasing)
-    g = QLinearGradient(R(0, 0, w_mm, h_mm).topLeft(), R(0, 0, w_mm, h_mm).bottomRight())
-    g.setColorAt(0, QColor('#fff6ec'))
-    g.setColorAt(0.5, QColor('#fbeff3'))
-    g.setColorAt(1, QColor('#f3eefb'))
-    p.fillRect(R(0, 0, w_mm, h_mm), g)
-    band_y = max(4.0, float(f.get('date', {}).get('y', 22)) - 5)
-    p.fillRect(R(0, band_y, w_mm, 1.6), QColor('#f08a24'))
-    p.setPen(QPen(QColor('#c9ced8'), max(1.0, 0.3 * k)))
-    p.drawRoundedRect(R(3, 2, 32, 10), 2 * k, 2 * k)
-    p.drawRoundedRect(R(w_mm - 35, 2, 32, 10), 2 * k, 2 * k)
-    font = QFont('Arial')
-    font.setPointSizeF(7.5 * scale)
-    font.setBold(True)
-    p.setFont(font)
-    label = QColor('#3b3b4f')
+    def font(size, bold=True):
+        fo = QFont('Arial')
+        fo.setPointSizeF(size * scale)
+        fo.setBold(bold)
+        return fo
 
-    def lab(text, x, y, w=30, align=Qt.AlignLeft):
-        p.setPen(label)
+    ink = QColor('#3b3b4f')
+
+    def lab(text, x, y, w=30, align=Qt.AlignLeft, size=7.5, bold=True, color=None):
+        p.setFont(font(size, bold))
+        p.setPen(color or ink)
         p.drawText(R(x, y, w, 5), int(align | Qt.AlignVCenter), text)
 
-    def line(x, y, w):
-        p.setPen(QPen(QColor('#8c93a3'), max(1.0, 0.25 * k)))
+    def line(x, y, w, dotted=False):
+        p.setPen(QPen(QColor('#8c93a3'), max(1.0, 0.25 * k), Qt.DotLine if dotted else Qt.SolidLine))
         p.drawLine(R(x, y, w, 0).topLeft(), R(x, y, w, 0).topRight())
 
-    d = f.get('date', {})
-    lab('Date', 3, float(d.get('y', 22)) + 1, 15)
-    lab('التاريخ', float(d.get('x', 20)) + float(d.get('w', 36)) + 1, float(d.get('y', 22)) + 1, 15)
-    pay = f.get('payee', {})
-    py = float(pay.get('y', 34))
-    lab('Pay Against This Cheque', 3, py - 5.5, 50)
-    lab('ادفعوا بموجب هذا الشيك', w_mm - 53, py - 5.5, 50, Qt.AlignRight)
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing)
+    full = R(0, 0, w_mm, h_mm)
+    grad = QLinearGradient(full.topLeft(), full.bottomRight())
+    grad.setColorAt(0, QColor('#fbf6e3'))
+    grad.setColorAt(0.55, QColor('#f6f3e6'))
+    grad.setColorAt(1, QColor('#efeedf'))
+    p.fillRect(full, grad)
+    # watermark seal in the middle
+    p.setPen(QPen(QColor(150, 140, 100, 40), max(1.0, 0.6 * k)))
+    c = R(w_mm / 2 - 14, h_mm / 2 - 14, 28, 28)
+    p.drawEllipse(c)
+    p.drawEllipse(c.adjusted(3 * k, 3 * k, -3 * k, -3 * k))
+    # header: bank (right), second logo (left), crossing stamp box (centre)
+    p.setPen(QPen(QColor('#c9c2a2'), max(1.0, 0.3 * k)))
+    p.setBrush(QColor('#fffdf6'))
+    p.drawRoundedRect(R(w_mm - 50, 1.5, 47, 9.5), 1.5 * k, 1.5 * k)
+    p.drawRoundedRect(R(3, 1.5, 47, 9.5), 1.5 * k, 1.5 * k)
+    p.setBrush(Qt.NoBrush)
+    lab(labels.get('bank') or 'البنك', w_mm - 49, 3.7, 45, Qt.AlignHCenter, 8.5, color=QColor('#1f4e3d'))
+    cr = f.get('crossing') or {}
+    p.fillRect(R(g('crossing', 'x', 66), g('crossing', 'y', 8), g('crossing', 'w', 50), g('crossing', 'h', 9)),
+               QColor(200, 200, 205, 120))
+    lab('ختم التسطير', g('crossing', 'x', 66), g('crossing', 'y', 8) + 2, g('crossing', 'w', 50), Qt.AlignHCenter,
+        6.5, False, QColor('#9a9aa5'))
+    # date
+    dy, dx, dw = g('date', 'y', 17), g('date', 'x', 17), g('date', 'w', 40)
+    lab('Date', 3, dy + 1, 14)
+    lab('التاريخ', dx + dw + 1, dy + 1, 14)
+    line(dx, dy + 6.5, dw, dotted=True)
+    lab('الفرع', w_mm - 33, dy - 3, 30, Qt.AlignRight, 7.5)
+    # pay to
+    py = g('payee', 'y', 30)
+    lab('Pay Against This Cheque', 3, py - 6, 50)
+    lab('ادفعوا بموجب هذا الشيك', w_mm - 53, py - 4.5, 50, Qt.AlignRight)
     lab('To', 3, py + 1, 10)
-    lab('لأمر', w_mm - 13, py + 1, 10, Qt.AlignRight)
-    line(10, py + 6.5, w_mm - 24)
-    w1 = f.get('words1', {})
-    wy = float(w1.get('y', 44))
+    lab('لأمر', w_mm - 12, py + 1, 9, Qt.AlignRight)
+    line(10, py + 6.5, w_mm - 22, dotted=True)
+    # the sum of
+    wy, wx, ww = g('words1', 'y', 38), g('words1', 'x', 26), g('words1', 'w', 90)
     lab('The Sum Of', 3, wy + 1, 22)
-    lab('مبلغ وقدره', float(w1.get('x', 30)) + float(w1.get('w', 100)) + 1, wy + 1, 20)
-    line(float(w1.get('x', 30)), wy + 6.5, float(w1.get('w', 100)))
-    w2 = f.get('words2', {})
-    line(float(w2.get('x', 10)), float(w2.get('y', 52)) + 6.5, float(w2.get('w', 112)))
+    lab('مبلغ وقدره', wx + ww + 1, wy + 1, 20)
+    line(wx, wy + 6.5, ww, dotted=True)
+    line(g('words2', 'x', 8), g('words2', 'y', 46) + 6.5, g('words2', 'w', 110), dotted=True)
+    # amount box: fils on the right, dinars to its left, as printed by Jordanian banks
     ad, af = f.get('amount_dinar', {}), f.get('amount_fils', {})
     if ad.get('visible', True) or af.get('visible', True):
-        x0 = float(ad.get('x', 128)) - 1
-        x1 = float(af.get('x', 156)) + float(af.get('w', 13)) + 1
-        y0 = float(ad.get('y', 48)) - 5
-        p.setPen(QPen(QColor('#6b6f85'), max(1.0, 0.35 * k)))
+        x0 = g('amount_dinar', 'x', 124) - 1
+        xf = g('amount_fils', 'x', 154) - 0.5
+        x1 = g('amount_fils', 'x', 154) + g('amount_fils', 'w', 16) + 1
+        y0 = g('amount_dinar', 'y', 41) - 5
+        p.setPen(QPen(QColor('#55596b'), max(1.0, 0.35 * k)))
         p.drawRect(R(x0, y0, x1 - x0, 13))
-        p.drawLine(R(float(af.get('x', 156)) - 1, y0, 0, 13).topLeft(), R(float(af.get('x', 156)) - 1, y0, 0, 13).bottomLeft())
-        small = QFont(font)
-        small.setPointSizeF(6.5 * scale)
-        p.setFont(small)
-        lab('J.D.   دينار', float(ad.get('x', 128)), y0 + 0.2, float(ad.get('w', 26)), Qt.AlignHCenter)
-        lab('Fils  فلس', float(af.get('x', 156)) - 1, y0 + 0.2, float(af.get('w', 13)) + 2, Qt.AlignHCenter)
-        p.setFont(font)
-    sy = h_mm - 12
+        p.drawLine(R(x0, y0 + 4.5, x1 - x0, 0).topLeft(), R(x0, y0 + 4.5, x1 - x0, 0).topRight())
+        p.drawLine(R(xf, y0, 0, 13).topLeft(), R(xf, y0, 0, 13).bottomLeft())
+        lab('J.D.     دينار', x0, y0 - 0.3, xf - x0, Qt.AlignHCenter, 6.5)
+        lab('Fils  فلس', xf, y0 - 0.3, x1 - xf, Qt.AlignHCenter, 6.5)
+        holder = labels.get('holder')
+        lab(('السادة ' + holder) if holder else 'اسم صاحب الحساب', x0 - 10, y0 + 15, x1 - x0 + 10, Qt.AlignRight, 8)
+    # signature, footer, MICR line
+    sy = h_mm - 17
     lab('التوقيع', 3, sy - 4, 20)
     lab('Sign', 3, sy, 20)
-    line(22, sy + 4, 45)
-    line(w_mm - 60, sy + 4, 45)
-    p.setPen(QColor('#9aa0ad'))
-    small = QFont(font)
-    small.setPointSizeF(5.5 * scale)
-    small.setBold(False)
-    p.setFont(small)
-    p.drawText(R(0, h_mm - 4.5, w_mm, 4), int(Qt.AlignHCenter | Qt.AlignVCenter),
-               'Please do not write under this line — الرجاء عدم الكتابة تحت هذا الخط')
+    line(18, sy + 4, 50)
+    line(3, h_mm - 9.5, w_mm - 6)
+    lab('Please do not write under this line — الرجاء عدم الكتابة تحت هذا الخط', 0, h_mm - 9.3, w_mm,
+        Qt.AlignHCenter, 5, False, QColor('#7a8090'))
+    mono = QFont('Courier New')
+    mono.setPointSizeF(10 * scale)
+    mono.setBold(True)
+    p.setFont(mono)
+    p.setPen(QColor('#22252e'))
+    acct = ''.join(ch for ch in (labels.get('account') or '') if ch.isdigit()) or '0000000000'
+    opt = QTextOption(Qt.AlignLeft | Qt.AlignVCenter)
+    opt.setTextDirection(Qt.LeftToRight)
+    p.drawText(R(8, h_mm - 6.5, w_mm - 16, 5), f'⑈000000⑈  ⑆00⑉000⑆  {acct}⑈', opt)
     p.restore()

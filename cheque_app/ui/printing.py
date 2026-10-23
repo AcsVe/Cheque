@@ -23,12 +23,12 @@ class ChequePreview(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.tpl, self.values, self.bg, self.highlight = None, {}, None, None
+        self.tpl, self.values, self.bg, self.highlight, self.labels = None, {}, None, None, {}
         self.setMinimumHeight(180)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-    def show_cheque(self, tpl, values, background=None, highlight=None):
-        self.tpl, self.values, self.bg, self.highlight = tpl, values, background, highlight
+    def show_cheque(self, tpl, values, background=None, highlight=None, labels=None):
+        self.tpl, self.values, self.bg, self.highlight, self.labels = tpl, values, background, highlight, labels or {}
         self.update()
 
     def heightForWidth(self, w):
@@ -49,7 +49,7 @@ class ChequePreview(QWidget):
         p.fillRect(int(ox * k), int(oy * k), int(w_mm * k), int(h_mm * k), QColor('#fffaf3'))
         # on screen only: the bank's scanned blank cheque, else a drawn cheque face — the printer prints the data only
         draw_cheque(p, self.tpl, self.values, (ox, oy), k, frame=True, background=self.bg,
-                    ink='#0b2a6b', highlight=self.highlight, simulate=True)
+                    ink='#0b2a6b', highlight=self.highlight, simulate=True, labels=self.labels)
         p.end()
 
 
