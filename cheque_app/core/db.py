@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-from .templates import default_template
+from .templates import default_template, upgrade_saved
 
 MIGRATIONS = [
     # 1 — initial schema
@@ -114,7 +114,7 @@ class Database:
         base = default_template()
         if b:
             try:
-                t = json.loads(b['template'])
+                t = upgrade_saved(json.loads(b['template']))
                 base.update({k: v for k, v in t.items() if k != 'fields'})
                 for k, f in (t.get('fields') or {}).items():
                     base['fields'].setdefault(k, {}).update(f)

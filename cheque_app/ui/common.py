@@ -6,7 +6,7 @@ import os
 from PySide6.QtCore import Qt, QItemSelectionModel, QSortFilterProxyModel, QModelIndex, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
-                               QLineEdit, QMessageBox, QPushButton, QTableView, QVBoxLayout, QWidget)
+                               QLineEdit, QMessageBox, QTableView, QVBoxLayout, QWidget)
 
 _LANG = {'lang': 'ar'}
 
@@ -100,7 +100,8 @@ class FilterHeader(QHeaderView):
         self.adjust()
 
     def _extra(self):
-        return max((e.sizeHint().height() for e in self.editors), default=0) + 4
+        from .theme import COMPACT_H
+        return (COMPACT_H + 8) if self.editors else 0
 
     def sizeHint(self):
         s = super().sizeHint()
@@ -126,16 +127,18 @@ class FilterHeader(QHeaderView):
                 e.hide()
                 continue
             e.show()
-            e.setGeometry(self.sectionViewportPosition(i) + 1, top, max(10, self.sectionSize(i) - 2), self._extra() - 4)
+            e.setGeometry(self.sectionViewportPosition(i) + 3, top + 1, max(10, self.sectionSize(i) - 6), self._extra() - 8)
 
 
 class DataTable(QWidget):
-    """columns: [(title, kind)] with kind 'text' | 'num' | 'select' (filter as a list of values).
-    rows: [(id, [values…])]. actions: [(label, callback(ids), danger)] shown on the bulk bar."""
+    """columns: [(title, kind)] with kind 'text' | 'num' | 'select' (filter as a list of values with counts).
+    rows: [(id, [values…])]. actions: [(label, callback(ids), danger[, icon])] shown on the bulk bar.
+    title: what the table lists (its accessible name)."""
     activated = Signal(int)          # double-click → id
     selection_changed = Signal(list)
 
-    def __init__(self, columns, actions=(), parent=None, export_name='export'):
+    def __init__(self, columns, actions=(), parent=None, export_name='export', title=None):
+        from .theme import a11y, button, icon
         super().__init__(parent)
         self.columns = columns
         self.export_name = export_name
@@ -152,28 +155,45 @@ class DataTable(QWidget):
         self.view.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.view.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.view.setAlternatingRowColors(True)
+        self.view.setShowGrid(False)
+        self.view.setWordWrap(False)
         self.view.verticalHeader().setVisible(False)
+        self.view.verticalHeader().setDefaultSectionSize(32)
         self.view.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.view.horizontalHeader().setStretchLastSection(True)
+        self.view.horizontalHeader().setDefaultAlignment(Qt.AlignLeading | Qt.AlignVCenter)
         self.view.doubleClicked.connect(self._double)
         self.view.selectionModel().selectionChanged.connect(lambda *_: self._sel_changed())
+        title = title or L('القائمة', 'List')
+        a11y(self.view, title, L('جدول: انقر نقراً مزدوجاً على سطر لفتحه، وحدّد عدة أسطر للإجراءات الجماعية.',
+                                 'Table: double-click a row to open it; select several rows for bulk actions.'))
 
         top = QHBoxLayout()
+        top.setSpacing(8)
         self.search = QLineEdit()
         self.search.setPlaceholderText(L('بحث في كل الأعمدة…', 'Search all columns…'))
+        self.search.addAction(icon('search', '#64748b'), QLineEdit.LeadingPosition)
+        self.search.setClearButtonEnabled(True)
+        self.search.setMaximumWidth(420)
+        a11y(self.search, L('بحث في ', 'Search ') + title)
         self.search.textChanged.connect(self._search)
         self.count = QLabel()
-        top.addWidget(self.search, 3)
+        self.count.setProperty('chip', True)
+        a11y(self.count, L('عدد الأسطر', 'Row count'))
+        top.addWidget(self.search, 1)
         top.addWidget(self.count)
-        export = QPushButton(L('تصدير Excel', 'Export to Excel'))
+        top.addStretch(1)
+        export = button(L('تصدير Excel', 'Export to Excel'), 'export',
+                        tip=L('تصدير الأسطر الظاهرة إلى ملف Excel', 'Export the rows shown to an Excel file'))
         export.clicked.connect(self.export)
         top.addWidget(export)
 
         # one filter box under every column title (inside the header, so it follows the column)
         self.filter_widgets = []
-        for i, (title, kind) in enumerate(columns):
+        for i, (title_i, kind) in enumerate(columns):
             if kind == 'select':
                 w = QComboBox()
+                w.setSizeAdjustPolicy(QComboBox.AdjustToContents)
                 w.addItem(L('الكل', 'All'), '')
                 w.currentIndexChanged.connect(lambda _i, c=i, ww=w: self._filter(c, ('=' + ww.currentData()) if ww.currentData() else ''))
             elif kind == 'none':
@@ -182,25 +202,28 @@ class DataTable(QWidget):
                 w = QLineEdit()
                 w.setPlaceholderText(L('تصفية…', 'Filter…'))
                 w.textChanged.connect(lambda t, c=i: self._filter(c, t))
+            w.setProperty('compact', True)
+            a11y(w, L('تصفية العمود: ', 'Filter column: ') + title_i)
             self.filter_widgets.append(w)
         self.header.set_editors(self.filter_widgets)
         self.view.horizontalScrollBar().valueChanged.connect(self.header.adjust)
 
         bar = QHBoxLayout()
+        bar.setSpacing(8)
         self.sel_label = QLabel(L('لم يُحدَّد شيء', 'Nothing selected'))
-        bar.addWidget(self.sel_label)
-        all_btn = QPushButton(L('تحديد الكل', 'Select all'))
+        self.sel_label.setProperty('muted', True)
+        all_btn = button(L('تحديد الكل', 'Select all'), 'select_all', 'ghost')
         all_btn.clicked.connect(self.view.selectAll)
-        none_btn = QPushButton(L('إلغاء التحديد', 'Clear selection'))
+        none_btn = button(L('إلغاء التحديد', 'Clear selection'), 'select_none', 'ghost')
         none_btn.clicked.connect(self.view.clearSelection)
         bar.addWidget(all_btn)
         bar.addWidget(none_btn)
+        bar.addWidget(self.sel_label)
         bar.addStretch(1)
         self.action_buttons = []
-        for label, cb, danger in actions:
-            b = QPushButton(label)
-            if danger:
-                b.setProperty('danger', True)
+        for act in actions:
+            label, cb, danger = act[:3]
+            b = button(label, act[3] if len(act) > 3 else None, 'danger' if danger else 'secondary')
             b.setEnabled(False)
             b.clicked.connect(lambda _=False, f=cb: f(self.selected_ids()))
             bar.addWidget(b)
@@ -208,6 +231,7 @@ class DataTable(QWidget):
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
         lay.addLayout(top)
         lay.addWidget(self.view, 1)
         lay.addLayout(bar)
@@ -217,7 +241,7 @@ class DataTable(QWidget):
         selected = set(self.selected_ids())
         self.view.setSortingEnabled(False)
         self.model.removeRows(0, self.model.rowCount())
-        values_per_col = [set() for _ in self.columns]
+        values_per_col = [{} for _ in self.columns]
         for rid, values in rows:
             items = []
             for c, v in enumerate(values):
@@ -229,21 +253,25 @@ class DataTable(QWidget):
                     it.setTextAlignment(Qt.AlignCenter)
                 items.append(it)
                 if self.columns[c][1] == 'select' and shown not in (None, ''):
-                    values_per_col[c].add(str(shown))
+                    values_per_col[c][str(shown)] = values_per_col[c].get(str(shown), 0) + 1
             self.model.appendRow(items)
         for c, w in enumerate(self.filter_widgets):
             if isinstance(w, QComboBox):
                 cur = w.currentData()
                 w.blockSignals(True)
                 w.clear()
-                w.addItem(L('الكل', 'All'), '')
+                w.addItem(L(f'الكل ({len(rows)})', f'All ({len(rows)})'), '')
                 for v in sorted(values_per_col[c]):
-                    w.addItem(v, norm(v))
+                    w.addItem(f'{v} ({values_per_col[c][v]})', norm(v))
                 i = w.findData(cur)
                 w.setCurrentIndex(i if i >= 0 else 0)
                 w.blockSignals(False)
         self.view.setSortingEnabled(True)
         self.view.resizeColumnsToContents()
+        for c, w in enumerate(self.filter_widgets):       # a filter is never narrower than what it shows
+            need = (w.sizeHint().width() + 8) if isinstance(w, QComboBox) else 96
+            if self.header.sectionSize(c) < need:
+                self.header.resizeSection(c, need)
         if selected:
             sm = self.view.selectionModel()
             for r in range(self.proxy.rowCount()):
@@ -281,12 +309,14 @@ class DataTable(QWidget):
 
     def _update_count(self):
         shown, total = self.proxy.rowCount(), self.model.rowCount()
-        self.count.setText(str(total) if shown == total else L(f'{shown} من {total}', f'{shown} of {total}'))
+        self.count.setText(L(f'الإجمالي: {total}', f'Total: {total}') if shown == total
+                           else L(f'الظاهر: {shown} من {total}', f'Shown: {shown} of {total}'))
         self._sel_changed()
 
     def _sel_changed(self):
         ids = self.selected_ids()
-        self.sel_label.setText(L(f'المحدد: {len(ids)}', f'Selected: {len(ids)}') if ids
+        total = self.proxy.rowCount()
+        self.sel_label.setText(L(f'المحدد: {len(ids)} من {total}', f'Selected: {len(ids)} of {total}') if ids
                                else L('لم يُحدَّد شيء', 'Nothing selected'))
         for b in self.action_buttons:
             b.setEnabled(bool(ids))

@@ -1,14 +1,16 @@
 """«إصدار شيك»: the cheque form with the live preview, save / save & print / reprint / new."""
-from PySide6.QtCore import QDate, Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QCompleter, QDateEdit, QDialog, QDialogButtonBox,
-                               QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QRadioButton,
-                               QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtCore import QDate, QRegularExpression, Qt, Signal
+from PySide6.QtGui import QRegularExpressionValidator
+from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QCompleter, QDateEdit, QDialog,
+                               QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit, QRadioButton, QSizePolicy, QSpinBox,
+                               QVBoxLayout, QWidget)
 
 from ..core.db import CROSSINGS, STATUSES, to_decimal
 from ..core.render import cheque_values
-from ..core.tafqeet import amount_words
-from .common import DataTable, L, confirm, error, info
+from ..core.tafqeet import CURRENCIES, amount_words
+from .common import DataTable, L, confirm, error
 from .printing import ChequePreview, load_background, preview_jobs, print_jobs
+from .theme import a11y, button, card, field, form_grid, icon_button, ltr, name_buttons
 
 ERRORS = {
     'amount': ('أدخل مبلغاً صحيحاً أكبر من صفر.', 'Enter a valid amount greater than zero.'),
@@ -27,16 +29,19 @@ class PickDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.resize(820, 480)
-        self.table = DataTable(columns)
+        self.table = DataTable(columns, title=title)
         self.table.view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.set_rows(rows)
         self.table.activated.connect(lambda _id: self.accept())
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.button(QDialogButtonBox.Ok).setText(L('اختيار', 'Choose'))
         bb.button(QDialogButtonBox.Cancel).setText(L('إلغاء', 'Cancel'))
+        name_buttons(bb)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 16, 16, 16)
+        lay.setSpacing(12)
         lay.addWidget(self.table)
         lay.addWidget(bb)
 
@@ -55,37 +60,40 @@ class IssueTab(QWidget):
         self.cheque_id = None
 
         self.account = QComboBox()
+        self.account.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.account.setMinimumContentsLength(24)
         self.account.currentIndexChanged.connect(self._account_changed)
-        self.number = QSpinBox()
+        self.number = ltr(QSpinBox(), 140)
         self.number.setRange(1, 999999999)
+        self.number.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.number.valueChanged.connect(self._number_changed)
-        find_no = QPushButton('؟')
-        find_no.setToolTip(L('فتح شيك محفوظ', 'Open a saved cheque'))
-        find_no.setFixedWidth(34)
+        find_no = icon_button('search', L('فتح شيك محفوظ من هذا الحساب', 'Open a saved cheque of this account'))
         find_no.clicked.connect(self.pick_cheque)
-        self.date = QDateEdit(QDate.currentDate())
+        self.date = ltr(QDateEdit(QDate.currentDate()), 150)
         self.date.setCalendarPopup(True)
         self.date.setDisplayFormat('dd/MM/yyyy')
-        self.date.setLayoutDirection(Qt.LeftToRight)
         self.date.dateChanged.connect(self.refresh_preview)
         self.payee = QComboBox()
         self.payee.setEditable(True)
         self.payee.setInsertPolicy(QComboBox.NoInsert)
-        self.payee.lineEdit().setPlaceholderText(L('اكتب أو اختر المستفيد', 'Type or choose the payee'))
+        self.payee.lineEdit().setPlaceholderText(L('اكتب اسم المستفيد أو اختره', 'Type or choose the payee'))
         self.payee.editTextChanged.connect(self.refresh_preview)
-        find_payee = QPushButton('؟')
-        find_payee.setToolTip(L('اختيار من قائمة المستفيدين', 'Choose from the payees list'))
-        find_payee.setFixedWidth(34)
+        find_payee = icon_button('search', L('اختيار من قائمة المستفيدين', 'Choose from the payees list'))
         find_payee.clicked.connect(self.pick_payee)
-        self.amount = QLineEdit()
+        self.amount = ltr(QLineEdit(), 180)
         self.amount.setPlaceholderText('0.000')
-        self.amount.setAlignment(Qt.AlignCenter)
-        self.amount.setLayoutDirection(Qt.LeftToRight)
-        self.number.setLayoutDirection(Qt.LeftToRight)
+        self.amount.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.amount.setValidator(QRegularExpressionValidator(
+            QRegularExpression(r'^[0-9\x{0660}-\x{0669},\x{066C}]{0,15}([.\x{066B}][0-9\x{0660}-\x{0669}]{0,3})?$'), self.amount))
         self.amount.textChanged.connect(self._amount_changed)
+        self.amount.editingFinished.connect(self._format_amount)
+        self.currency = QLabel('JOD')
+        self.currency.setProperty('chip', True)
+        a11y(self.currency, L('العملة', 'Currency'))
         self.words = QLineEdit()
         self.words.setReadOnly(True)
         self.words_manual = QCheckBox(L('تعديل النص يدوياً', 'Edit the text by hand'))
+        a11y(self.words_manual, L('تعديل المبلغ كتابةً يدوياً', 'Edit the amount in words by hand'))
         self.words_manual.toggled.connect(self._manual_toggled)
         self.words.textEdited.connect(self.refresh_preview)
         self.memo = QLineEdit()
@@ -93,72 +101,97 @@ class IssueTab(QWidget):
                                        'Purpose or invoice number (printed only if enabled in the template)'))
         self.memo.textChanged.connect(self.refresh_preview)
         self.crossing = QButtonGroup(self)
-        cross_box = QGroupBox(L('التسطير', 'Crossing'))
-        cl = QVBoxLayout(cross_box)
+        cross_row = QHBoxLayout()
+        cross_row.setSpacing(18)
         for key, (ar, en) in CROSSINGS.items():
             rb = QRadioButton(L(ar, en))
+            a11y(rb, L('التسطير: ', 'Crossing: ') + L(ar, en))
             rb.setProperty('key', key)
             self.crossing.addButton(rb)
-            cl.addWidget(rb)
+            cross_row.addWidget(rb)
             if key == 'none':
                 rb.setChecked(True)
+        cross_row.addStretch(1)
         self.crossing.buttonToggled.connect(lambda *_: self.refresh_preview())
         self.status = QLabel()
         self.status.setObjectName('status')
+        a11y(self.status, L('حالة الشيك', 'Cheque status'))
 
-        g = QGridLayout()
-        r = 0
-        g.addWidget(QLabel(L('الحساب', 'Account')), r, 0)
-        g.addWidget(self.account, r, 1, 1, 2)
-        g.addWidget(QLabel(L('التاريخ', 'Date')), r, 3)
-        g.addWidget(self.date, r, 4)
-        r += 1
-        g.addWidget(QLabel(L('رقم الشيك', 'Cheque no.')), r, 0)
-        g.addWidget(self.number, r, 1)
-        g.addWidget(find_no, r, 2)
-        g.addWidget(cross_box, r, 3, 4, 2)
-        r += 1
-        g.addWidget(QLabel(L('اسم المستفيد', 'Payee')), r, 0)
-        g.addWidget(self.payee, r, 1)
-        g.addWidget(find_payee, r, 2)
-        r += 1
-        g.addWidget(QLabel(L('المبلغ', 'Amount')), r, 0)
-        g.addWidget(self.amount, r, 1, 1, 2)
-        r += 1
-        g.addWidget(QLabel(L('المبلغ كتابةً', 'In words')), r, 0)
-        g.addWidget(self.words, r, 1, 1, 2)
-        r += 1
-        g.addWidget(QLabel(''), r, 0)
-        g.addWidget(self.words_manual, r, 1, 1, 2)
-        r += 1
-        g.addWidget(QLabel(L('البيان', 'Memo')), r, 0)
-        g.addWidget(self.memo, r, 1, 1, 4)
-        g.setColumnStretch(1, 3)
-        g.setColumnStretch(4, 1)
+        form_card = card(L('بيانات الشيك', 'Cheque details'))
+        g = form_grid()
+        field(g, 0, 0, L('الحساب', 'Account'), self.account)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        row.addWidget(self.number)
+        row.addWidget(find_no)
+        a11y(self.number, L('رقم الشيك', 'Cheque number'))
+        field(g, 0, 2, L('رقم الشيك', 'Cheque no.'), row)
+        field(g, 0, 4, L('التاريخ', 'Date'), self.date)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        row.addWidget(self.payee, 1)
+        row.addWidget(find_payee)
+        a11y(self.payee, L('اسم المستفيد', 'Payee'))
+        field(g, 1, 0, L('اسم المستفيد', 'Payee'), row)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        row.addWidget(self.amount)
+        row.addWidget(self.currency)
+        row.addStretch(1)
+        a11y(self.amount, L('المبلغ رقماً', 'Amount in figures'))
+        field(g, 1, 2, L('المبلغ', 'Amount'), row, 3)
+        field(g, 2, 0, L('المبلغ كتابةً', 'In words'), self.words, 3)
+        g.addWidget(self.words_manual, 2, 4, 1, 2)
+        field(g, 3, 0, L('البيان', 'Memo'), self.memo, 5)
+        cross_lab = field(g, 4, 0, L('التسطير', 'Crossing'), cross_row, 5)
+        cross_lab.setToolTip(L('عبارة ختم التسطير التي تُطبع أعلى الشيك', 'The crossing stamp printed at the top of the cheque'))
+        g.setColumnStretch(1, 1)
+        g.setColumnMinimumWidth(2, 60)
+        form_card.setLayout(g)
 
         btns = QHBoxLayout()
-        self.b_save = QPushButton(L('حفظ البيانات', 'Save'))
-        self.b_print = QPushButton(L('حفظ وطباعة', 'Save && print'))
-        self.b_print.setProperty('primary', True)
-        self.b_reprint = QPushButton(L('إعادة طباعة', 'Reprint'))
-        self.b_preview = QPushButton(L('معاينة الطباعة', 'Print preview'))
-        self.b_new = QPushButton(L('شيك جديد', 'New cheque'))
+        btns.setSpacing(8)
+        self.b_print = button(L('حفظ وطباعة', 'Save && print'), 'print', 'primary',
+                              L('حفظ الشيك ثم طباعته على الشيك في الطابعة', 'Save the cheque, then print it'))
+        self.b_save = button(L('حفظ البيانات', 'Save'), 'save', tip=L('حفظ الشيك دون طباعة', 'Save without printing'))
+        self.b_preview = button(L('معاينة الطباعة', 'Print preview'), 'preview')
+        self.b_reprint = button(L('إعادة طباعة', 'Reprint'), 'reprint',
+                                tip=L('طباعة الشيك المفتوح برقمه نفسه', 'Print the open cheque again with the same number'))
+        self.b_new = button(L('شيك جديد', 'New cheque'), 'new', tip=L('تفريغ النموذج لشيك جديد', 'Clear the form for a new cheque'))
         self.b_save.clicked.connect(lambda: self.save(print_after=False))
         self.b_print.clicked.connect(lambda: self.save(print_after=True))
         self.b_reprint.clicked.connect(self.reprint)
         self.b_preview.clicked.connect(self.preview)
         self.b_new.clicked.connect(self.new)
-        for b in (self.b_save, self.b_print, self.b_reprint, self.b_preview, self.b_new):
+        for b in (self.b_print, self.b_save, self.b_preview, self.b_reprint):
             btns.addWidget(b)
+        btns.addSpacing(8)
+        btns.addWidget(self.status)
+        btns.addStretch(1)
+        btns.addWidget(self.b_new)
 
         self.preview_w = ChequePreview()
+        self.preview_w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         lay = QVBoxLayout(self)
-        lay.addLayout(g)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(12)
+        lay.addWidget(form_card)
         lay.addLayout(btns)
-        lay.addWidget(self.status)
         lay.addWidget(self.preview_w, 1)
         self.reload_lists()
         self.new()
+
+    def _format_amount(self):
+        """1250.75 → 1,250.750 (the currency's decimals) once the amount is typed."""
+        a = to_decimal(self.amount.text())
+        if a is None or a <= 0:
+            return
+        _t, _b, acc = self._template()
+        per = CURRENCIES.get((acc or {}).get('currency') or 'JOD', CURRENCIES['JOD'])['per']
+        places = 3 if per == 1000 else 2
+        text = f'{a:,.{places}f}'
+        if text != self.amount.text():
+            self.amount.setText(text)
 
     # ── lists ────────────────────────────────────────────────────────
     def reload_lists(self):
@@ -185,6 +218,8 @@ class IssueTab(QWidget):
         self.refresh_preview()
 
     def _account_changed(self, *_):
+        acc = self.db.account(self.account.currentData()) if self.account.currentData() else None
+        self.currency.setText((acc or {}).get('currency') or 'JOD')
         if self.cheque_id is None and self.account.currentData():
             self.number.blockSignals(True)
             self.number.setValue(self.db.next_cheque_no(self.account.currentData()))
@@ -197,7 +232,7 @@ class IssueTab(QWidget):
             dup = self.db.find_cheque(acc, self.number.value())
             self._status(L(f'تنبيه: الشيك رقم {self.number.value()} محفوظ مسبقاً — اضغط «؟» لفتحه.',
                            f'Note: cheque {self.number.value()} is already saved — press «?» to open it.')
-                         if dup else L('شيك جديد', 'New cheque'), warn=bool(dup))
+                         if dup else L('شيك جديد — لم يُحفظ بعد', 'New cheque — not saved yet'), warn=bool(dup))
         self.refresh_preview()
 
     def _amount_changed(self, *_):

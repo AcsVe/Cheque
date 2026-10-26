@@ -1,11 +1,11 @@
 ; Inno Setup script — ChequePrinterSetup.exe
-; Build (after PyInstaller):  iscc /DMyAppVersion=1.0.0 installer\ChequePrinter.iss
+; Build (after PyInstaller):  iscc /DMyAppVersion=1.1.0 installer\ChequePrinter.iss
 ; - installs to Program Files\ChequePrinter, Start-menu and desktop shortcuts
 ; - creates the shared data folder %ProgramData%\ChequePrinter writable by every user of the PC
 ; - an update installs over the old version; the data (database, templates, backups, licence) is never touched,
 ;   also not on uninstall
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.0"
 #endif
 #define MyAppName "ChequePrinter"
 #define MyAppPublisher "AcsVe"

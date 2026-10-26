@@ -2,9 +2,8 @@
 from decimal import Decimal
 
 from PySide6.QtCore import QDate, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
-                               QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSpinBox, QSplitter, QVBoxLayout,
-                               QWidget, QFileDialog, QGroupBox)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
+                               QLineEdit, QPlainTextEdit, QSpinBox, QSplitter, QVBoxLayout, QWidget, QFileDialog)
 from PySide6.QtCore import Qt
 
 from ..core.db import CROSSINGS, STATUSES
@@ -12,6 +11,7 @@ from ..core.render import cheque_values
 from ..core.tafqeet import CURRENCIES
 from .common import DataTable, L, confirm, error, info
 from .printing import print_jobs
+from .theme import a11y, button, card, field, form_grid, ltr, name_buttons
 
 
 def _st(key):
@@ -28,38 +28,45 @@ class RegisterTab(QWidget):
     def __init__(self, ctx):
         super().__init__()
         self.ctx, self.db = ctx, ctx.db
-        self.d_from = QDateEdit(QDate.currentDate().addMonths(-12))
-        self.d_to = QDateEdit(QDate.currentDate().addMonths(12))
+        self.d_from = ltr(QDateEdit(QDate.currentDate().addMonths(-12)), 150)
+        self.d_to = ltr(QDateEdit(QDate.currentDate().addMonths(12)), 150)
         for d in (self.d_from, self.d_to):
             d.setCalendarPopup(True)
             d.setDisplayFormat('dd/MM/yyyy')
-            d.setLayoutDirection(Qt.LeftToRight)
             d.dateChanged.connect(self.reload)
         self.total = QLabel()
+        self.total.setProperty('chip', True)
+        a11y(self.total, L('مجموع المبالغ الظاهرة', 'Total of the amounts shown'))
         self.table = DataTable([
             (L('رقم الشيك', 'Cheque no.'), 'num'), (L('التاريخ', 'Date'), 'text'), (L('المستفيد', 'Payee'), 'text'),
             (L('المبلغ', 'Amount'), 'num'), (L('العملة', 'Currency'), 'select'), (L('البنك', 'Bank'), 'select'),
             (L('الحساب', 'Account'), 'select'), (L('التسطير', 'Crossing'), 'select'), (L('الحالة', 'Status'), 'select'),
             (L('مرات الطباعة', 'Printed'), 'num'), (L('البيان', 'Memo'), 'text'),
         ], actions=[
-            (L('فتح للتعديل', 'Open'), self._open, False),
-            (L('طباعة المحدد', 'Print selected'), self._print, False),
-            (L('إلغاء الشيك', 'Cancel cheque'), self._cancel, True),
-            (L('حذف', 'Delete'), self._delete, True),
-        ], export_name='cheques')
+            (L('فتح للتعديل', 'Open'), self._open, False, 'edit'),
+            (L('طباعة المحدد', 'Print selected'), self._print, False, 'print'),
+            (L('إلغاء الشيك', 'Cancel cheque'), self._cancel, True, 'cancel'),
+            (L('حذف', 'Delete'), self._delete, True, 'trash'),
+        ], export_name='cheques', title=L('سجل الشيكات', 'Cheque register'))
         self.table.activated.connect(self.open_cheque.emit)
         self.table.proxy.layoutChanged.connect(self._totals)
         self.table.proxy.rowsInserted.connect(self._totals)
         self.table.proxy.rowsRemoved.connect(self._totals)
         self.table.proxy.modelReset.connect(self._totals)
         top = QHBoxLayout()
-        top.addWidget(QLabel(L('من تاريخ', 'From')))
-        top.addWidget(self.d_from)
-        top.addWidget(QLabel(L('إلى تاريخ', 'To')))
-        top.addWidget(self.d_to)
+        top.setSpacing(8)
+        for text, w in ((L('من تاريخ', 'From'), self.d_from), (L('إلى تاريخ', 'To'), self.d_to)):
+            lab = QLabel(text)
+            lab.setBuddy(w)
+            a11y(w, text)
+            top.addWidget(lab)
+            top.addWidget(w)
+            top.addSpacing(8)
         top.addStretch(1)
         top.addWidget(self.total)
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(10)
         lay.addLayout(top)
         lay.addWidget(self.table)
         self.reload()
@@ -127,6 +134,32 @@ class RegisterTab(QWidget):
 
 
 # ───────────────────────────── payees ─────────────────────────────
+def _dialog_layout(dlg, grid):
+    """A form dialog: the fields in a card, Save (primary) and Cancel under it."""
+    from PySide6.QtWidgets import QSizePolicy
+    box = card()
+    grid.setColumnStretch(1, 1)
+    box.setLayout(grid)
+    bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+    save = bb.button(QDialogButtonBox.Save)
+    save.setText(L('حفظ', 'Save'))
+    save.setProperty('primary', True)
+    save.setMinimumWidth(110)
+    cancel = bb.button(QDialogButtonBox.Cancel)
+    cancel.setText(L('إلغاء', 'Cancel'))
+    cancel.setMinimumWidth(110)
+    name_buttons(bb)
+    bb.accepted.connect(dlg.accept)
+    bb.rejected.connect(dlg.reject)
+    lay = QVBoxLayout(dlg)
+    lay.setContentsMargins(18, 8, 18, 18)
+    lay.setSpacing(14)
+    lay.addWidget(box)
+    lay.addWidget(bb)
+    dlg.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+    dlg.resize(max(560, dlg.sizeHint().width()), dlg.sizeHint().height())
+
+
 class PayeeDialog(QDialog):
     def __init__(self, parent, payee=None):
         super().__init__(parent)
@@ -135,25 +168,70 @@ class PayeeDialog(QDialog):
         self.name_en = QLineEdit((payee or {}).get('name_en') or '')
         self.phone = QLineEdit((payee or {}).get('phone') or '')
         self.notes = QLineEdit((payee or {}).get('notes') or '')
-        self.active = QCheckBox(L('فعّال', 'Active'))
+        self.active = a11y(QCheckBox(L('فعّال', 'Active')), L('المستفيد فعّال', 'Payee active'))
         self.active.setChecked(bool((payee or {}).get('is_active', 1)))
-        f = QFormLayout(self)
-        f.addRow(L('الاسم *', 'Name *'), self.name)
-        f.addRow(L('الاسم بالإنجليزية', 'English name'), self.name_en)
-        f.addRow(L('الهاتف', 'Phone'), self.phone)
-        f.addRow(L('ملاحظات', 'Notes'), self.notes)
-        f.addRow('', self.active)
-        bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        bb.button(QDialogButtonBox.Save).setText(L('حفظ', 'Save'))
-        bb.button(QDialogButtonBox.Cancel).setText(L('إلغاء', 'Cancel'))
-        bb.accepted.connect(self.accept)
-        bb.rejected.connect(self.reject)
-        f.addRow(bb)
+        self.name.setMinimumWidth(340)
+        self.name_en.setLayoutDirection(Qt.LeftToRight)
+        ltr(self.phone, 200)
+        g = form_grid()
+        field(g, 0, 0, L('الاسم *', 'Name *'), self.name)
+        field(g, 1, 0, L('الاسم بالإنجليزية', 'English name'), self.name_en)
+        field(g, 2, 0, L('الهاتف', 'Phone'), self.phone)
+        field(g, 3, 0, L('ملاحظات', 'Notes'), self.notes)
+        g.addWidget(self.active, 4, 1)
+        _dialog_layout(self, g)
 
     def values(self):
         return {'name': self.name.text().strip(), 'name_en': self.name_en.text().strip() or None,
                 'phone': self.phone.text().strip() or None, 'notes': self.notes.text().strip() or None,
                 'is_active': 1 if self.active.isChecked() else 0}
+
+
+class ImportPayeesDialog(QDialog):
+    """Paste a list of payees (one per line, or name ⇥ English name ⇥ phone from Excel), or load an Excel / CSV file."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle(L('إضافة قائمة مستفيدين', 'Add a list of payees'))
+        self.box = QPlainTextEdit()
+        self.box.setPlaceholderText(L('اسم في كل سطر، أو الصق من Excel: الاسم ⇥ الاسم بالإنجليزية ⇥ الهاتف',
+                                      'One name per line, or paste from Excel: name ⇥ English name ⇥ phone'))
+        a11y(self.box, L('قائمة المستفيدين', 'List of payees'),
+             L('اسم في كل سطر، أو أعمدة: الاسم، الاسم بالإنجليزية، الهاتف', 'One name per line, or columns: name, English name, phone'))
+        load = button(L('اختيار ملف Excel / CSV', 'Choose an Excel / CSV file'), 'folder')
+        load.clicked.connect(self.from_file)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.button(QDialogButtonBox.Ok).setText(L('إضافة', 'Add'))
+        bb.button(QDialogButtonBox.Ok).setProperty('primary', True)
+        bb.button(QDialogButtonBox.Cancel).setText(L('إلغاء', 'Cancel'))
+        name_buttons(bb)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        row = QHBoxLayout()
+        row.addWidget(load)
+        row.addStretch(1)
+        row.addWidget(bb)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 18, 18, 18)
+        lay.setSpacing(12)
+        lay.addWidget(self.box)
+        lay.addLayout(row)
+        self.resize(600, 400)
+
+    def from_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, '', '', 'Excel / CSV (*.xlsx *.csv *.txt)')
+        if not path:
+            return
+        lines = []
+        if path.lower().endswith('.xlsx'):
+            from openpyxl import load_workbook
+            ws = load_workbook(path, read_only=True, data_only=True).worksheets[0]
+            for r in ws.iter_rows(values_only=True):
+                lines.append('\t'.join('' if c is None else str(c) for c in r[:3]))
+        else:
+            with open(path, encoding='utf-8-sig', errors='ignore') as f:
+                lines = f.read().splitlines()
+        self.box.setPlainText('\n'.join(lines))
 
 
 class PayeesTab(QWidget):
@@ -166,22 +244,25 @@ class PayeesTab(QWidget):
             (L('الاسم', 'Name'), 'text'), (L('الاسم بالإنجليزية', 'English name'), 'text'), (L('الهاتف', 'Phone'), 'text'),
             (L('عدد الشيكات', 'Cheques'), 'num'), (L('الحالة', 'Status'), 'select'), (L('ملاحظات', 'Notes'), 'text'),
         ], actions=[
-            (L('تعديل', 'Edit'), lambda ids: self.edit(ids[0]), False),
-            (L('تفعيل', 'Activate'), lambda ids: self._active(ids, True), False),
-            (L('إيقاف', 'Deactivate'), lambda ids: self._active(ids, False), False),
-            (L('حذف', 'Delete'), self._delete, True),
-        ], export_name='payees')
+            (L('تعديل', 'Edit'), lambda ids: self.edit(ids[0]), False, 'edit'),
+            (L('تفعيل', 'Activate'), lambda ids: self._active(ids, True), False, 'on'),
+            (L('إيقاف', 'Deactivate'), lambda ids: self._active(ids, False), False, 'off'),
+            (L('حذف', 'Delete'), self._delete, True, 'trash'),
+        ], export_name='payees', title=L('المستفيدون', 'Payees'))
         self.table.activated.connect(self.edit)
-        add = QPushButton(L('+ مستفيد جديد', '+ New payee'))
-        add.setProperty('primary', True)
+        add = button(L('مستفيد جديد', 'New payee'), 'plus', 'primary')
         add.clicked.connect(lambda: self.edit(None))
-        imp = QPushButton(L('إضافة قائمة / استيراد', 'Add a list / import'))
+        imp = button(L('إضافة قائمة / استيراد', 'Add a list / import'), 'import',
+                     tip=L('لصق قائمة أسماء أو اختيار ملف Excel / CSV', 'Paste a list of names or choose an Excel / CSV file'))
         imp.clicked.connect(self.import_list)
         top = QHBoxLayout()
+        top.setSpacing(8)
         top.addWidget(add)
         top.addWidget(imp)
         top.addStretch(1)
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setSpacing(10)
         lay.addLayout(top)
         lay.addWidget(self.table)
         self.reload()
@@ -227,39 +308,10 @@ class PayeesTab(QWidget):
         self.changed.emit()
 
     def import_list(self):
-        dlg = QDialog(self)
-        dlg.setWindowTitle(L('إضافة قائمة مستفيدين', 'Add a list of payees'))
-        box = QPlainTextEdit()
-        box.setPlaceholderText(L('اسم في كل سطر، أو الصق من Excel: الاسم ⇥ الاسم بالإنجليزية ⇥ الهاتف',
-                                 'One name per line, or paste from Excel: name ⇥ English name ⇥ phone'))
-        load = QPushButton(L('أو اختر ملف Excel / CSV', 'Or choose an Excel / CSV file'))
-
-        def from_file():
-            path, _ = QFileDialog.getOpenFileName(dlg, '', '', 'Excel / CSV (*.xlsx *.csv *.txt)')
-            if not path:
-                return
-            lines = []
-            if path.lower().endswith('.xlsx'):
-                from openpyxl import load_workbook
-                ws = load_workbook(path, read_only=True, data_only=True).worksheets[0]
-                for r in ws.iter_rows(values_only=True):
-                    lines.append('\t'.join('' if c is None else str(c) for c in r[:3]))
-            else:
-                lines = open(path, encoding='utf-8-sig', errors='ignore').read().splitlines()
-            box.setPlainText('\n'.join(lines))
-        load.clicked.connect(from_file)
-        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.button(QDialogButtonBox.Ok).setText(L('إضافة', 'Add'))
-        bb.button(QDialogButtonBox.Cancel).setText(L('إلغاء', 'Cancel'))
-        bb.accepted.connect(dlg.accept)
-        bb.rejected.connect(dlg.reject)
-        lay = QVBoxLayout(dlg)
-        lay.addWidget(box)
-        lay.addWidget(load)
-        lay.addWidget(bb)
-        dlg.resize(560, 380)
+        dlg = ImportPayeesDialog(self)
         if not dlg.exec():
             return
+        box = dlg.box
         existing = {p['name'] for p in self.db.payees()}
         added = skipped = 0
         for line in box.toPlainText().splitlines():
@@ -304,23 +356,24 @@ class AccountDialog(QDialog):
         self.last_no.setSpecialValueText(L('غير محدد', 'Not set'))
         self.last_no.setValue(int(acc.get('last_no') or 0))
         self.notes = QLineEdit(acc.get('notes') or '')
-        self.active = QCheckBox(L('فعّال', 'Active'))
+        self.active = a11y(QCheckBox(L('فعّال', 'Active')), L('الحساب فعّال', 'Account active'))
         self.active.setChecked(bool(acc.get('is_active', 1)))
-        f = QFormLayout(self)
-        f.addRow(L('البنك (القالب)', 'Bank (template)'), self.bank)
-        f.addRow(L('اسم الحساب *', 'Account name *'), self.name)
-        f.addRow(L('رقم الحساب', 'Account number'), self.number)
-        f.addRow(L('العملة', 'Currency'), self.currency)
-        f.addRow(L('رقم الشيك التالي', 'Next cheque number'), self.next_no)
-        f.addRow(L('آخر رقم في دفتر الشيكات', 'Last number in the cheque book'), self.last_no)
-        f.addRow(L('ملاحظات', 'Notes'), self.notes)
-        f.addRow('', self.active)
-        bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        bb.button(QDialogButtonBox.Save).setText(L('حفظ', 'Save'))
-        bb.button(QDialogButtonBox.Cancel).setText(L('إلغاء', 'Cancel'))
-        bb.accepted.connect(self.accept)
-        bb.rejected.connect(self.reject)
-        f.addRow(bb)
+        self.bank.setMinimumWidth(340)
+        ltr(self.number, 220)
+        self.currency.setFixedWidth(120)
+        for sp in (self.next_no, self.last_no):
+            ltr(sp, 160)
+            sp.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        g = form_grid()
+        field(g, 0, 0, L('البنك (القالب)', 'Bank (template)'), self.bank)
+        field(g, 1, 0, L('اسم الحساب *', 'Account name *'), self.name)
+        field(g, 2, 0, L('رقم الحساب', 'Account number'), self.number)
+        field(g, 3, 0, L('العملة', 'Currency'), self.currency)
+        field(g, 4, 0, L('رقم الشيك التالي', 'Next cheque number'), self.next_no)
+        field(g, 5, 0, L('آخر رقم في دفتر الشيكات', 'Last number in the cheque book'), self.last_no)
+        field(g, 6, 0, L('ملاحظات', 'Notes'), self.notes)
+        g.addWidget(self.active, 7, 1)
+        _dialog_layout(self, g)
 
     def values(self):
         return {'bank_id': self.bank.currentData(), 'name': self.name.text().strip(),
@@ -338,28 +391,31 @@ class BanksTab(QWidget):
         self.banks = DataTable([(L('البنك / القالب', 'Bank / template'), 'text'), (L('بالإنجليزية', 'English'), 'text'),
                                 (L('المقاس (مم)', 'Size (mm)'), 'text'), (L('الحسابات', 'Accounts'), 'num'),
                                 (L('الحالة', 'Status'), 'select')],
-                               actions=[(L('معايرة القالب', 'Calibrate template'), lambda ids: self.calibrate(ids[0]), False),
-                                        (L('نسخ القالب', 'Duplicate'), lambda ids: self.duplicate(ids[0]), False),
-                                        (L('تفعيل', 'Activate'), lambda ids: self._active('banks', ids, True), False),
-                                        (L('إيقاف', 'Deactivate'), lambda ids: self._active('banks', ids, False), False),
-                                        (L('حذف', 'Delete'), self._delete_banks, True)], export_name='banks')
+                               actions=[(L('معايرة القالب', 'Calibrate template'), lambda ids: self.calibrate(ids[0]), False, 'calibrate'),
+                                        (L('نسخ القالب', 'Duplicate'), lambda ids: self.duplicate(ids[0]), False, 'copy'),
+                                        (L('تفعيل', 'Activate'), lambda ids: self._active('banks', ids, True), False, 'on'),
+                                        (L('إيقاف', 'Deactivate'), lambda ids: self._active('banks', ids, False), False, 'off'),
+                                        (L('حذف', 'Delete'), self._delete_banks, True, 'trash')], export_name='banks',
+                               title=L('البنوك وقوالب الشيكات', 'Banks and cheque templates'))
         self.banks.activated.connect(self.calibrate)
         self.accounts = DataTable([(L('الحساب', 'Account'), 'text'), (L('البنك', 'Bank'), 'select'),
                                    (L('رقم الحساب', 'Number'), 'text'), (L('العملة', 'Currency'), 'select'),
                                    (L('الشيك التالي', 'Next cheque'), 'num'), (L('آخر رقم في الدفتر', 'Last in book'), 'num'),
                                    (L('الشيكات', 'Cheques'), 'num'), (L('الحالة', 'Status'), 'select')],
-                                  actions=[(L('تعديل', 'Edit'), lambda ids: self.edit_account(ids[0]), False),
-                                           (L('جعله الافتراضي', 'Make default'), self._default, False),
-                                           (L('تفعيل', 'Activate'), lambda ids: self._active('accounts', ids, True), False),
-                                           (L('إيقاف', 'Deactivate'), lambda ids: self._active('accounts', ids, False), False),
-                                           (L('حذف', 'Delete'), self._delete_accounts, True)], export_name='accounts')
+                                  actions=[(L('تعديل', 'Edit'), lambda ids: self.edit_account(ids[0]), False, 'edit'),
+                                           (L('جعله الافتراضي', 'Make default'), self._default, False, 'star'),
+                                           (L('تفعيل', 'Activate'), lambda ids: self._active('accounts', ids, True), False, 'on'),
+                                           (L('إيقاف', 'Deactivate'), lambda ids: self._active('accounts', ids, False), False, 'off'),
+                                           (L('حذف', 'Delete'), self._delete_accounts, True, 'trash')], export_name='accounts',
+                                  title=L('الحسابات البنكية', 'Bank accounts'))
         self.accounts.activated.connect(self.edit_account)
-        add_bank = QPushButton(L('+ بنك / قالب جديد', '+ New bank / template'))
+        add_bank = button(L('بنك / قالب جديد', 'New bank / template'), 'bank',
+                          tip=L('إضافة بنك ومعايرة قالب شيكاته', 'Add a bank and calibrate its cheque template'))
         add_bank.clicked.connect(self.add_bank)
-        add_acc = QPushButton(L('+ حساب بنكي جديد', '+ New bank account'))
-        add_acc.setProperty('primary', True)
+        add_acc = button(L('حساب بنكي جديد', 'New bank account'), 'plus', 'primary')
         add_acc.clicked.connect(lambda: self.edit_account(None))
-        gb1, gb2 = QGroupBox(L('البنوك وقوالب الشيكات', 'Banks and cheque templates')), QGroupBox(L('الحسابات البنكية ودفاتر الشيكات', 'Bank accounts and cheque books'))
+        gb1 = card(L('البنوك وقوالب الشيكات', 'Banks and cheque templates'))
+        gb2 = card(L('الحسابات البنكية ودفاتر الشيكات', 'Bank accounts and cheque books'))
         l1, l2 = QVBoxLayout(gb1), QVBoxLayout(gb2)
         h1, h2 = QHBoxLayout(), QHBoxLayout()
         h1.addWidget(add_bank)
@@ -371,9 +427,12 @@ class BanksTab(QWidget):
         l2.addLayout(h2)
         l2.addWidget(self.accounts)
         sp = QSplitter(Qt.Vertical)
+        sp.setChildrenCollapsible(False)
+        sp.setHandleWidth(10)
         sp.addWidget(gb2)
         sp.addWidget(gb1)
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 0, 14, 14)
         lay.addWidget(sp)
         self.reload()
 

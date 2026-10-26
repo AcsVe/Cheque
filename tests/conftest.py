@@ -8,3 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 _APP = QApplication.instance() or QApplication([])   # widgets need a QApplication, created before any test
+
+from cheque_app.ui.theme import apply_theme  # noqa: E402
+
+apply_theme(_APP)                                    # the tests see the windows as the user does

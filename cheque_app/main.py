@@ -5,35 +5,13 @@ import sys
 from datetime import date
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QIcon
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from . import __version__
 from .core import license as lic
 from .core.db import Database
 from .core.templates import CROSSING_TEXT
-
-STYLE = """
-QWidget { font-size: 10.5pt; }
-QMainWindow, QDialog { background: #f4f6f9; }
-QTabWidget::pane { border: 1px solid #d9dee6; background: #fff; border-radius: 6px; }
-QTabBar::tab { padding: 8px 18px; margin: 2px; border-radius: 6px; background: #e6ebf2; color: #1c2533; }
-QTabBar::tab:selected { background: #12305e; color: #fff; }
-QPushButton { padding: 6px 14px; border: 1px solid #1d5fbf; border-radius: 6px; background: #fff; color: #1d5fbf; }
-QPushButton:hover { background: #eef4fd; }
-QPushButton:disabled { color: #9aa4b2; border-color: #c9d0da; }
-QPushButton[primary="true"] { background: #1d5fbf; color: #fff; font-weight: bold; }
-QPushButton[danger="true"] { color: #b42318; border-color: #f1b8b2; }
-QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QPlainTextEdit { padding: 4px 6px; border: 1px solid #c9d0da; border-radius: 5px; background: #fff; }
-QLineEdit:read-only { background: #f3f5f8; }
-QHeaderView::section { background: #12305e; color: #fff; padding: 6px; border: 0; border-left: 1px solid #2b4a7c; font-weight: bold; }
-QTableView { gridline-color: #e3e7ee; selection-background-color: #cfe0fb; selection-color: #000; alternate-background-color: #f8fafd; }
-QGroupBox { font-weight: bold; border: 1px solid #d9dee6; border-radius: 6px; margin-top: 10px; padding-top: 8px; }
-QGroupBox::title { subcontrol-origin: margin; padding: 0 6px; }
-QLabel#status { padding: 6px 10px; border-radius: 6px; background: #e6f5ed; color: #14532d; }
-QLabel#status[warn="true"] { background: #fff4e0; color: #8a5a00; }
-"""
-
 
 def data_dir():
     if os.environ.get('CHEQUE_DATA'):
@@ -129,10 +107,8 @@ def main(argv=None):
     set_lang(ctx.db.get('lang', 'ar'))
     if ctx.db.get('lang', 'ar') != 'en':
         app.setLayoutDirection(Qt.RightToLeft)
-    font = QFont('Segoe UI' if sys.platform.startswith('win') else app.font().family())
-    font.setPointSizeF(10.5)
-    app.setFont(font)
-    app.setStyleSheet(STYLE)
+    from .ui.theme import apply_theme
+    apply_theme(app)
     ctx.daily_backup()
     from .ui.main_window import MainWindow
     w = MainWindow(ctx)

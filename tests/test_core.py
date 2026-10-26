@@ -157,3 +157,64 @@ def test_render_pdf(tmp_path):
     v = cheque_values(t, {'cheque_date': '2026-03-19', 'payee': 'x', 'amount': '500000', 'crossing': 'first'})
     assert v['amount_dinar'] == '#٥٠٠٠٠٠#' and v['amount_fils'] == '---' and v['date'] == '٢٠٢٦/٠٣/١٩'
     assert v['words'] == 'فقط خمسمائة ألف دينار لا غير'
+
+
+def _layout(t, v, dpi=300):
+    from PySide6.QtGui import QImage
+    from cheque_app.core.render import layout_cheque
+    img = QImage(8, 8, QImage.Format_ARGB32)
+    img.setDotsPerMeterX(round(dpi / 0.0254))
+    img.setDotsPerMeterY(round(dpi / 0.0254))
+    k = dpi / 25.4
+    return layout_cheque(t, v, (0, 0), k, k * 25.4 / img.logicalDpiY(), img), img
+
+
+def test_fields_fit_their_boxes():
+    """Every text is fitted to its field: words split at a word boundary by the measured width, long text shrinks
+    (never below the minimum), both lines of the words share one font, and nothing is drawn wider than its box."""
+    from PySide6.QtGui import QFontMetricsF
+    from cheque_app.core.render import cheque_values, min_size
+    from cheque_app.core.templates import default_template
+    t = default_template()
+    v = cheque_values(t, {'cheque_date': '2026-10-26', 'payee': 'مؤسسة النور للتجارة', 'amount': '1250.750',
+                          'crossing': 'first'})
+    placed, dev = _layout(t, v)
+    assert {pl.state for pl in placed.values()} == {'ok'}
+    assert (placed['words1'].text + ' ' + placed['words2'].text).split() == v['words'].split()
+    assert placed['words1'].font.pointSizeF() == placed['words2'].font.pointSizeF()
+    for pl in placed.values():
+        fm = QFontMetricsF(pl.font, dev)
+        if pl.key != 'crossing':
+            assert fm.horizontalAdvance(pl.text) <= pl.rect.width() + 0.5, pl.key
+            assert fm.ascent() + fm.descent() <= pl.rect.height() + 0.5, pl.key
+    # the same size by default for the date, payee, words and figures
+    assert len({t['fields'][k]['size'] for k in ('date', 'payee', 'words1', 'words2', 'amount_dinar', 'amount_fils')}) == 1
+
+    long = cheque_values(t, {'cheque_date': '2026-10-26', 'amount': '987654321.999', 'crossing': 'both',
+                             'payee': 'شركة الأفق الجديد للتجارة العامة والمقاولات والاستثمارات العقارية والصناعية المحدودة'})
+    placed, dev = _layout(t, long)
+    assert placed['words1'].state == 'shrunk' and placed['payee'].state in ('shrunk', 'ok')
+    assert (placed['words1'].text + ' ' + placed['words2'].text).split() == long['words'].split()
+    for key in ('words1', 'words2', 'payee'):
+        fm = QFontMetricsF(placed[key].font, dev)
+        assert fm.horizontalAdvance(placed[key].text) <= placed[key].rect.width() + 0.5
+        assert placed[key].size >= min_size(t['fields'][key])
+    t['fields']['payee']['w'] = 10                                          # far too small: reported, not hidden
+    placed, _ = _layout(t, long)
+    assert placed['payee'].state == 'overflow'
+
+
+def test_old_templates_upgrade():
+    """1.0.0 templates: an uncalibrated one takes the new layout; a calibrated one keeps its positions and its
+    centred text, so the print does not move on the cheque."""
+    from cheque_app.core.templates import default_template, upgrade_saved, _V1_FIELDS
+    v1 = {'width_mm': 175.0, 'height_mm': 80.0, 'feed': {'offset_x': 0.0, 'offset_y': 0.0},
+          'fields': {k: {'x': x, 'y': y, 'w': w, 'size': s, 'visible': k not in ('amount_full', 'memo', 'cheque_no')}
+                     for k, (x, y, w, s) in _V1_FIELDS.items()}}
+    up = upgrade_saved(v1)
+    assert up['layout'] == 2 and all('x' not in f for f in up['fields'].values())
+    v1['fields']['date']['x'] = 20.5
+    up = upgrade_saved(v1)
+    d = up['fields']['date']
+    assert d['x'] == 20.5 and d['y'] == 17.0 and d['valign'] == 'center' and abs(d['h'] - 11 * 0.3528 * 1.6) < 0.01
+    assert upgrade_saved(default_template()) == default_template()

@@ -9,7 +9,7 @@ EXCLUDE = ['PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets', 'PySide6.QtW
            'PySide6.QtSql', 'PySide6.QtTest', 'PySide6.QtWebSockets', 'PySide6.QtWebChannel', 'PySide6.QtPdf',
            'PySide6.QtPdfWidgets', 'PySide6.QtSpatialAudio', 'PySide6.QtTextToSpeech', 'tkinter']
 
-a = Analysis(['run.py'], pathex=[], binaries=[], datas=[('assets', 'assets')], hiddenimports=[],
+a = Analysis(['run.py'], pathex=[], binaries=[], datas=[('assets', 'assets')], hiddenimports=['PySide6.QtSvg'],
              hookspath=[], runtime_hooks=[], excludes=EXCLUDE, cipher=block_cipher, noarchive=False)
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='ChequePrinter', debug=False, strip=False, upx=False,
