@@ -179,7 +179,8 @@ def test_fields_fit_their_boxes():
     v = cheque_values(t, {'cheque_date': '2026-10-26', 'payee': 'مؤسسة النور للتجارة', 'amount': '1250.750',
                           'crossing': 'first'})
     placed, dev = _layout(t, v)
-    assert {pl.state for pl in placed.values()} == {'ok'}
+    states = {k: (pl.state, round(pl.font.pointSizeF(), 2)) for k, pl in placed.items() if pl.state != 'ok'}
+    assert not states, states
     assert (placed['words1'].text + ' ' + placed['words2'].text).split() == v['words'].split()
     assert placed['words1'].font.pointSizeF() == placed['words2'].font.pointSizeF()
     for pl in placed.values():
