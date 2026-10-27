@@ -31,8 +31,8 @@ jobs:
           i = text.find('Timeout +++')
           sec = text[i:i + 60000] if i >= 0 else text[-20000:]
           lines = sec.splitlines()
-          keep = [l for n, l in enumerate(lines) if l.startswith(('E ', 'FAILED', 'ERROR')) or '.py:' in l]
-          part = '\n'.join(lines[:3] + keep[:80])
+          keep = [l for l in lines if l.startswith(('E ', 'FAILED', 'ERROR')) or (l.startswith('tests') and '.py:' in l)]
+          part = '\n'.join(keep[:60])[:3500]
           print('::error::' + part.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
           PY
       - name: Version
