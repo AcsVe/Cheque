@@ -194,7 +194,7 @@ def test_fields_fit_their_boxes():
     long = cheque_values(t, {'cheque_date': '2026-10-26', 'amount': '987654321.999', 'crossing': 'both',
                              'payee': 'شركة الأفق الجديد للتجارة العامة والمقاولات والاستثمارات العقارية والصناعية المحدودة'})
     placed, dev = _layout(t, long)
-    assert placed['words1'].state == 'shrunk' and placed['payee'].state in ('shrunk', 'ok')
+    assert placed['words1'].state in ('shrunk', 'ok') and placed['payee'].state in ('shrunk', 'ok')   # Arial on Windows is narrower
     assert (placed['words1'].text + ' ' + placed['words2'].text).split() == long['words'].split()
     for key in ('words1', 'words2', 'payee'):
         fm = QFontMetricsF(placed[key].font, dev)
