@@ -411,6 +411,9 @@ class TemplateEditor(QDialog):
 
         actions = []
         for label, ic, cb, tip in (
+                (L('إرفاق صورة الشيك الفارغ…', 'Attach the blank cheque scan…'), 'image', self.load_background,
+                 L('صورة ممسوحة لشيك فارغ من الدفتر، للمعاينة والمعايرة فقط ولا تُطبع',
+                   'A scan of a blank cheque from the book — for preview and calibration only, never printed')),
                 (L('طباعة صفحة المعايرة', 'Print the calibration sheet'), 'grid', lambda: self._print(True),
                  L('شبكة مليمترية وإطارات الحقول على ورقة عادية', 'A millimetre grid and the field frames on plain paper')),
                 (L('طباعة شيك تجريبي', 'Print a sample cheque'), 'print', lambda: self._print(False), None),
@@ -450,9 +453,7 @@ class TemplateEditor(QDialog):
         top.addWidget(sp, 1)
         lay.addLayout(top, 1)
         lay.addLayout(ends)
-        need = max(fields_tab.sizeHint().width(), tpl_tab.sizeHint().width()) + 30   # + the scroll bar
-        right = min(need, int(QWidget.width(self) * 0.6))
-        sp.setSizes([max(300, QWidget.width(self) - right - 40), right])
+        self._split, self._right_pages, self._split_done = sp, (fields_tab, tpl_tab), False
         self.build_scene()
         self.fields.setCurrentRow(0)
         self._scene_selection()
@@ -500,6 +501,14 @@ class TemplateEditor(QDialog):
 
     def showEvent(self, e):
         super().showEvent(e)
+        if not self._split_done:            # once the fields have their real (font-based) sizes
+            self._split_done = True
+            for page in self._right_pages:
+                page.adjustSize()
+            need = max(p.sizeHint().width() for p in self._right_pages) + 34          # + the scroll bar
+            total = self._split.width() or QWidget.width(self) - 28
+            right = min(need, int(total * 0.62))
+            self._split.setSizes([max(280, total - right), right])
         self._fit_view()
 
     def _schedule(self):

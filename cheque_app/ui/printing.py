@@ -53,7 +53,9 @@ class ChequePreview(QWidget):
         self.update()
 
     def hasHeightForWidth(self):
-        return self.tpl is not None
+        # the preview fills the space left under the form (the drawing keeps the cheque's proportions); a height
+        # tied to the width made it grow without limit inside the scrolling page
+        return False
 
     def heightForWidth(self, w):
         if not self.tpl:

@@ -46,7 +46,7 @@ pip install -r requirements-dev.txt
 python run.py                      # تشغيل من المصدر
 QT_QPA_PLATFORM=offscreen python -m pytest -q tests
 pyinstaller --noconfirm ChequePrinter.spec
-iscc /DMyAppVersion=1.1.1 installer\ChequePrinter.iss
+iscc /DMyAppVersion=1.1.2 installer\ChequePrinter.iss
 ```
 | المجلد/الملف | المحتوى |
 |---|---|
@@ -73,5 +73,6 @@ iscc /DMyAppVersion=1.1.1 installer\ChequePrinter.iss
 - ملف PDF المطبوع يحمل عنواناً وصفياً («شيك 100 — المستفيد») ومُنشئه ChequePrinter؛ الشيك المطبوع لا صور فيه.
 - المقاسات تتبع الخط الفعلي على الجهاز (حجم النص في ويندوز وتكبير الشاشة 125% و150%): ارتفاع الحقول والأزرار `theme.control_height()` (لا يقل عن 34px)، والحقول ذات المقاس `ltr(w, عرض)`/`fit(w, عرض)` تتسع لأعرض رقم أو تاريخ أو خيار، فلا يُقص نص.
 - كل قسم من النافذة الرئيسية وكل نموذج داخل منطقة تمرير (`theme.scroll_page`)، فتصل عجلة الفأرة إلى آخر النافذة على الشاشات الصغيرة، وتُفتح النوافذ بمقاس الشاشة المتاح (`theme.fit_to_screen`). صفوف الأزرار تنتقل إلى سطر جديد بدل أن تُقص (`theme.flow_row`). عجلة الفأرة فوق حقل رقم أو قائمة غير محددة تمرّر الصفحة ولا تغيّر القيمة. الاختبار `test_nothing_clipped_on_small_screens_and_large_text` يحرس ذلك بخط 15 نقطة.
+- معاينة الشيك في «إصدار شيك» تملأ المساحة المتبقية تحت النموذج ولا تكبر مع عرض النافذة. زر «إرفاق صورة الشيك الفارغ…» في أسفل نافذة القالب والمعايرة دائماً.
 - نافذة جديدة: استخدم `theme.field()` للحقول (عنوان مرتبط واسم وصول)، و`theme.button()`/`icon_button()` للأزرار، و`card()` للمجموعات.
 - رفع الإصدار: `cheque_app/__init__.py` ← `__version__`.
