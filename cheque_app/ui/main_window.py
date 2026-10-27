@@ -12,7 +12,8 @@ from ..core import license as lic
 from ..core.db import CROSSINGS
 from ..core.templates import CROSSING_TEXT
 from .common import L, confirm, error, info
-from .theme import a11y, button, card, field, form_grid, icon, icon_button, ltr, muted, name_buttons
+from .theme import (a11y, button, card, field, fit, fit_to_screen, form_grid, icon, icon_button, ltr, muted,
+                    name_buttons, scroll_page)
 from .issue import IssueTab
 from .lists import BanksTab, PayeesTab, RegisterTab
 
@@ -41,7 +42,7 @@ class LicenseDialog(QDialog):
         self.key = ltr(QLineEdit())
         self.key.setFont(mono)
         self.key.setPlaceholderText('YYYYMMDD:…')
-        self.key.setMinimumWidth(380)
+        self.key.setMinimumWidth(300)
         act = button(L('تفعيل', 'Activate'), 'key', 'primary')
         act.clicked.connect(self.activate)
         g = form_grid()
@@ -74,7 +75,7 @@ class LicenseDialog(QDialog):
         lay.setSpacing(14)
         lay.addWidget(box)
         lay.addLayout(row2)
-        self.resize(max(640, self.sizeHint().width()), self.sizeHint().height())
+        fit_to_screen(self, max(640, self.sizeHint().width()), self.sizeHint().height())
 
     def activate(self):
         key = ''.join(self.key.text().split())
@@ -103,12 +104,12 @@ class SettingsTab(QWidget):
         self.lang.addItem('العربية', 'ar')
         self.lang.addItem('English', 'en')
         self.lang.setCurrentIndex(max(0, self.lang.findData(self.db.get('lang', 'ar'))))
-        self.lang.setFixedWidth(220)
+        fit(self.lang, 220)
         self.default_crossing = QComboBox()
         for k, (ar, en) in CROSSINGS.items():
             self.default_crossing.addItem(L(ar, en), k)
         self.default_crossing.setCurrentIndex(max(0, self.default_crossing.findData(self.db.get('default_crossing') or 'none')))
-        self.default_crossing.setFixedWidth(260)
+        fit(self.default_crossing, 260)
         self.ask_printer = a11y(QCheckBox(L('اختيار الطابعة عند كل طباعة', 'Choose the printer at every print')),
                                 L('اختيار الطابعة عند كل طباعة', 'Choose the printer at every print'))
         self.ask_printer.setChecked(self.db.get('ask_printer', '1') == '1')
@@ -124,7 +125,7 @@ class SettingsTab(QWidget):
         cf = form_grid()
         for i, k in enumerate(('first', 'account', 'both')):
             e = QLineEdit(self.db.get(f'crossing_text_{k}') or CROSSING_TEXT[k])
-            e.setMinimumWidth(380)
+            e.setMinimumWidth(260)
             self.cross[k] = e
             field(cf, i, 0, L(*CROSSINGS[k]), e)
             a11y(e, L('نص ختم التسطير: ', 'Crossing text: ') + L(*CROSSINGS[k]))
@@ -240,13 +241,17 @@ class MainWindow(QMainWindow):
         self.payees = PayeesTab(ctx)
         self.banks = BanksTab(ctx)
         self.settings = SettingsTab(ctx)
+        self._areas = {}
         for wdg, ic, ar, en in ((self.issue, 'print', 'إصدار شيك', 'Issue a cheque'),
                                 (self.register, 'grid', 'سجل الشيكات', 'Cheque register'),
                                 (self.payees, 'edit', 'المستفيدون', 'Payees'),
                                 (self.banks, 'bank', 'البنوك والحسابات', 'Banks && accounts'),
                                 (self.settings, 'calibrate', 'الإعدادات', 'Settings')):
-            self.tabs.addTab(wdg, icon(ic, '#64748b'), L(ar, en))
             a11y(wdg, L(ar, en).replace('&&', '&'))
+            self._areas[wdg] = scroll_page(wdg)
+            self.tabs.addTab(self._areas[wdg], icon(ic, '#64748b'), L(ar, en))
+        self.tabs.setUsesScrollButtons(True)
+        self.tabs.tabBar().setExpanding(False)
         self.setCentralWidget(self.tabs)
         self.issue.saved.connect(self.register.reload)
         self.issue.saved.connect(self.payees.reload)
@@ -260,7 +265,7 @@ class MainWindow(QMainWindow):
         lic_act.triggered.connect(lambda: LicenseDialog(self, ctx).exec())
         self.menuBar().addAction(lic_act)
         self.update_title()
-        self.resize(1180, 820)
+        fit_to_screen(self, 1180, 820)
 
     def update_title(self):
         st = self.ctx.license(refresh=True)
@@ -268,7 +273,10 @@ class MainWindow(QMainWindow):
 
     def open_cheque(self, cid):
         self.issue.load(cid)
-        self.tabs.setCurrentWidget(self.issue)
+        self.show_tab(self.issue)
+
+    def show_tab(self, page):
+        self.tabs.setCurrentWidget(self._areas[page])
 
     def refresh_all(self):
         self.issue.reload_lists()
@@ -277,7 +285,7 @@ class MainWindow(QMainWindow):
         self.banks.reload()
 
     def _tab_changed(self, i):
-        if self.tabs.widget(i) is self.register:
+        if self.tabs.widget(i) is self._areas[self.register]:
             self.register.reload()
 
     def showEvent(self, e):
@@ -285,7 +293,7 @@ class MainWindow(QMainWindow):
         if not self.ctx.db.accounts():
             info(self, L('مرحباً! ابدأ بإضافة حسابك البنكي (البنك، اسم الحساب، رقم الشيك التالي)، ثم عاير قالب البنك بطباعة تجريبية.',
                          'Welcome! Start by adding your bank account (bank, account name, next cheque number), then calibrate the bank template with a test print.'))
-            self.tabs.setCurrentWidget(self.banks)
+            self.show_tab(self.banks)
             self.banks.edit_account(None)
         st = self.ctx.license()
         if st.mode in ('expired', 'trial_over'):

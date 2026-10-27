@@ -158,7 +158,8 @@ def preview_jobs(parent, jobs, settings_get=None, calibration=False):
     dlg = QPrintPreviewDialog(printer, parent)
     dlg.setWindowTitle(L('معاينة الطباعة', 'Print preview'))
     dlg.paintRequested.connect(lambda pr: _render(pr, jobs, calibration))
-    dlg.resize(1000, 700)
+    from .theme import fit_to_screen
+    fit_to_screen(dlg, 1000, 700)
     dlg.exec()
 
 

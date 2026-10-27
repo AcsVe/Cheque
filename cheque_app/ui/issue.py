@@ -10,7 +10,7 @@ from ..core.render import cheque_values
 from ..core.tafqeet import CURRENCIES, amount_words
 from .common import DataTable, L, confirm, error
 from .printing import ChequePreview, load_background, preview_jobs, print_jobs
-from .theme import a11y, button, card, field, form_grid, icon_button, ltr, name_buttons
+from .theme import a11y, button, card, field, fit_to_screen, flow_row, form_grid, icon_button, ltr, name_buttons
 
 ERRORS = {
     'amount': ('أدخل مبلغاً صحيحاً أكبر من صفر.', 'Enter a valid amount greater than zero.'),
@@ -28,7 +28,7 @@ class PickDialog(QDialog):
     def __init__(self, parent, title, columns, rows):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(820, 480)
+        fit_to_screen(self, 820, 480)
         self.table = DataTable(columns, title=title)
         self.table.view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.set_rows(rows)
@@ -61,7 +61,7 @@ class IssueTab(QWidget):
 
         self.account = QComboBox()
         self.account.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-        self.account.setMinimumContentsLength(24)
+        self.account.setMinimumContentsLength(16)
         self.account.currentIndexChanged.connect(self._account_changed)
         self.number = ltr(QSpinBox(), 140)
         self.number.setRange(1, 999999999)
@@ -163,12 +163,8 @@ class IssueTab(QWidget):
         self.b_reprint.clicked.connect(self.reprint)
         self.b_preview.clicked.connect(self.preview)
         self.b_new.clicked.connect(self.new)
-        for b in (self.b_print, self.b_save, self.b_preview, self.b_reprint):
-            btns.addWidget(b)
-        btns.addSpacing(8)
-        btns.addWidget(self.status)
-        btns.addStretch(1)
-        btns.addWidget(self.b_new)
+        btns.addWidget(flow_row([self.b_print, self.b_save, self.b_preview, self.b_reprint, self.status]), 1)
+        btns.addWidget(self.b_new, 0, Qt.AlignTop)
 
         self.preview_w = ChequePreview()
         self.preview_w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)

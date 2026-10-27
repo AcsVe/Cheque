@@ -17,7 +17,8 @@ from ..core.render import cheque_values, draw_cheque, min_size
 from ..core.templates import FIELDS, default_template
 from .common import L, error, info
 from .printing import ChequePreview, load_background, preview_jobs, print_jobs
-from .theme import C, a11y, button, card, field, form_grid, hint, icon, icon_button, ltr, muted
+from .theme import (C, a11y, button, card, field, fit, fit_to_screen, flow_row, form_grid, hint, icon, icon_button,
+                    ltr, muted)
 
 S = 5.0      # scene units per mm
 RES = 12.0   # pixels per mm of the rendered cheque behind the fields (≈ 305 dpi, like a printer)
@@ -128,7 +129,7 @@ class TemplateEditor(QDialog):
         self.tpl = self.db.template(bank_id) if bank_id else default_template()
         self.background = (bank or {}).get('background')
         self.setWindowTitle(L('قالب الشيك والمعايرة', 'Cheque template & calibration') + (f' — {bank["name"]}' if bank else ''))
-        self.resize(1280, 800)
+        fit_to_screen(self, 1280, 800)
         self._syncing = False
         self.items, self.states = {}, {}
         self._timer = QTimer(self)
@@ -166,13 +167,11 @@ class TemplateEditor(QDialog):
             b = icon_button(ic, L(ar, en))
             b.setProperty('need', need)
             b.clicked.connect(fn)
-            tools.addWidget(b)
             self.align_buttons.append(b)
-            if ic in ('align_bottom', 'same_height'):
-                tools.addSpacing(10)
+        tools.addWidget(flow_row(self.align_buttons, 4), 1)
         tools.addSpacing(10)
         self.sel_label = muted('')
-        tools.addWidget(self.sel_label, 1)
+        tools.addWidget(self.sel_label, 0, Qt.AlignTop)
         legend = QHBoxLayout()
         legend.setSpacing(14)
         for state, ar, en in (('ok', 'يتسع', 'Fits'), ('shrunk', 'صُغِّر الخط ليتسع', 'Font reduced to fit'),
@@ -183,7 +182,7 @@ class TemplateEditor(QDialog):
         keys_hint = muted(L('الأسهم: تحريك 0.5 مم، ومع Shift ‏5 مم. Ctrl+نقر أو السحب حول الحقول لتحديد أكثر من حقل.',
                             'Arrows move 0.5 mm, with Shift 5 mm. Ctrl+click, or drag around fields, to select several.'))
         keys_hint.setWordWrap(True)
-        legend.addWidget(keys_hint, 1)
+        legend.addStretch(1)
         board = QWidget()
         bl = QVBoxLayout(board)
         bl.setContentsMargins(10, 10, 10, 10)
@@ -191,6 +190,7 @@ class TemplateEditor(QDialog):
         bl.addLayout(tools)
         bl.addWidget(self.view, 1)
         bl.addLayout(legend)
+        bl.addWidget(keys_hint)
 
         self.preview = ChequePreview()
         self.preview.setLayoutDirection(Qt.LeftToRight)
@@ -208,7 +208,8 @@ class TemplateEditor(QDialog):
             it = QListWidgetItem(L(*FIELDS[key]))
             it.setData(Qt.UserRole, key)
             self.fields.addItem(it)
-        self.fields.setFixedHeight(6 * 32 + 10)
+        self.fields.setMinimumHeight(6 * 32 + 10)
+        self.fields.setMaximumHeight(9 * 32 + 10)
         self.fields.currentItemChanged.connect(self._field_selected)
 
         mm, pt = L(' مم', ' mm'), L(' نقطة', ' pt')
@@ -227,7 +228,7 @@ class TemplateEditor(QDialog):
         self.f_spacing.setToolTip(L('للتاريخ في مربعات: المسافة بين الأرقام (0 = نص عادي)', 'For a boxed date: distance between digits (0 = normal text)'))
         self.f_angle = self._dspin(-90, 90, 0, '°')
         for w in (self.f_align, self.f_valign):
-            w.setFixedWidth(160)
+            fit(w, 160)
         self.f_state = QLabel()
         self.f_state.setWordWrap(True)
         self.f_state.setProperty('hint', True)
@@ -336,7 +337,7 @@ class TemplateEditor(QDialog):
         self.off_y = self._dspin(-100, 100, feed.get('offset_y') or 0, mm)
         for w in (self.font, self.words_lang, self.date_fmt, self.hundred, self.digits, self.paper, self.rotate,
                   self.align_feed):
-            w.setFixedWidth(250)
+            fit(w, 210)
 
         gen = form_grid(8)
         field(gen, 0, 0, L('اسم البنك / القالب *', 'Bank / template name *'), self.name)
@@ -403,14 +404,12 @@ class TemplateEditor(QDialog):
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QScrollArea.NoFrame)
-            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
             scroll.setWidget(page)
             page.setObjectName('page')
             self.right_tabs.addTab(scroll, L(ar, en))
-        self.right_tabs.setMinimumWidth(570)
+        self.right_tabs.setMinimumWidth(320)
 
-        btns = QHBoxLayout()
-        btns.setSpacing(8)
+        actions = []
         for label, ic, cb, tip in (
                 (L('طباعة صفحة المعايرة', 'Print the calibration sheet'), 'grid', lambda: self._print(True),
                  L('شبكة مليمترية وإطارات الحقول على ورقة عادية', 'A millimetre grid and the field frames on plain paper')),
@@ -420,16 +419,20 @@ class TemplateEditor(QDialog):
                  L('إرجاع مواضع الحقول وأحجامها إلى القالب الافتراضي', 'Put the fields back to the default template'))):
             bt = button(label, ic, tip=tip)
             bt.clicked.connect(cb)
-            btns.addWidget(bt)
-        btns.addStretch(1)
+            actions.append(bt)
+        ends = QHBoxLayout()
+        ends.setContentsMargins(14, 0, 14, 14)
+        ends.setSpacing(8)
+        ends.addWidget(flow_row(actions), 1, Qt.AlignTop)
+        ends.addSpacing(12)
         cancel = button(L('إلغاء', 'Cancel'))
         cancel.setMinimumWidth(110)
         cancel.clicked.connect(self.reject)
         save = button(L('حفظ', 'Save'), 'save', 'primary')
         save.setMinimumWidth(110)
         save.clicked.connect(self.save)
-        btns.addWidget(cancel)
-        btns.addWidget(save)
+        ends.addWidget(cancel, 0, Qt.AlignBottom)
+        ends.addWidget(save, 0, Qt.AlignBottom)
 
         sp = QSplitter()
         sp.setChildrenCollapsible(False)
@@ -438,12 +441,18 @@ class TemplateEditor(QDialog):
         sp.setStretchFactor(0, 1)
         sp.setStretchFactor(1, 0)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setContentsMargins(0, 0, 0, 0)
+        top = QVBoxLayout()
+        top.setContentsMargins(14, 14, 14, 0)
         lay.setSpacing(10)
-        lay.addWidget(hint(L('١) اسحب كل حقل إلى مكانه على صورة الشيك أو اكتب موضعه بالمليمتر. ٢) اطبع «صفحة المعايرة» على ورقة عادية وضع الشيك فوقها مقابل الضوء. ٣) صحّح «الإزاحة» حتى تتطابق، ثم اطبع «شيكاً تجريبياً».',
+        top.addWidget(hint(L('١) اسحب كل حقل إلى مكانه على صورة الشيك أو اكتب موضعه بالمليمتر. ٢) اطبع «صفحة المعايرة» على ورقة عادية وضع الشيك فوقها مقابل الضوء. ٣) صحّح «الإزاحة» حتى تتطابق، ثم اطبع «شيكاً تجريبياً».',
                              '1) Drag every field onto the cheque or type its position in mm. 2) Print the «calibration sheet» on plain paper and hold a cheque over it against the light. 3) Correct the «shift» until they match, then print a «sample cheque».')))
-        lay.addWidget(sp, 1)
-        lay.addLayout(btns)
+        top.addWidget(sp, 1)
+        lay.addLayout(top, 1)
+        lay.addLayout(ends)
+        need = max(fields_tab.sizeHint().width(), tpl_tab.sizeHint().width()) + 30   # + the scroll bar
+        right = min(need, int(QWidget.width(self) * 0.6))
+        sp.setSizes([max(300, QWidget.width(self) - right - 40), right])
         self.build_scene()
         self.fields.setCurrentRow(0)
         self._scene_selection()

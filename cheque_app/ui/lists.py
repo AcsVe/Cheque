@@ -11,7 +11,7 @@ from ..core.render import cheque_values
 from ..core.tafqeet import CURRENCIES
 from .common import DataTable, L, confirm, error, info
 from .printing import print_jobs
-from .theme import a11y, button, card, field, form_grid, ltr, name_buttons
+from .theme import a11y, button, card, field, fit, fit_to_screen, form_grid, ltr, name_buttons, scroll_page
 
 
 def _st(key):
@@ -151,13 +151,21 @@ def _dialog_layout(dlg, grid):
     name_buttons(bb)
     bb.accepted.connect(dlg.accept)
     bb.rejected.connect(dlg.reject)
+    page = QWidget()
+    pl = QVBoxLayout(page)
+    pl.setContentsMargins(18, 8, 18, 4)
+    pl.addWidget(box)
+    pl.addStretch(1)
     lay = QVBoxLayout(dlg)
-    lay.setContentsMargins(18, 8, 18, 18)
-    lay.setSpacing(14)
-    lay.addWidget(box)
-    lay.addWidget(bb)
-    dlg.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-    dlg.resize(max(560, dlg.sizeHint().width()), dlg.sizeHint().height())
+    lay.setContentsMargins(0, 0, 0, 18)
+    lay.setSpacing(10)
+    lay.addWidget(scroll_page(page), 1)
+    bl = QHBoxLayout()
+    bl.setContentsMargins(18, 0, 18, 0)
+    bl.addWidget(bb)
+    lay.addLayout(bl)
+    want = page.sizeHint()
+    fit_to_screen(dlg, max(560, want.width() + 4), want.height() + bb.sizeHint().height() + 32)
 
 
 class PayeeDialog(QDialog):
@@ -170,7 +178,7 @@ class PayeeDialog(QDialog):
         self.notes = QLineEdit((payee or {}).get('notes') or '')
         self.active = a11y(QCheckBox(L('فعّال', 'Active')), L('المستفيد فعّال', 'Payee active'))
         self.active.setChecked(bool((payee or {}).get('is_active', 1)))
-        self.name.setMinimumWidth(340)
+        self.name.setMinimumWidth(260)
         self.name_en.setLayoutDirection(Qt.LeftToRight)
         ltr(self.phone, 200)
         g = form_grid()
@@ -216,7 +224,7 @@ class ImportPayeesDialog(QDialog):
         lay.setSpacing(12)
         lay.addWidget(self.box)
         lay.addLayout(row)
-        self.resize(600, 400)
+        fit_to_screen(self, 600, 400)
 
     def from_file(self):
         path, _ = QFileDialog.getOpenFileName(self, '', '', 'Excel / CSV (*.xlsx *.csv *.txt)')
@@ -358,9 +366,9 @@ class AccountDialog(QDialog):
         self.notes = QLineEdit(acc.get('notes') or '')
         self.active = a11y(QCheckBox(L('فعّال', 'Active')), L('الحساب فعّال', 'Account active'))
         self.active.setChecked(bool(acc.get('is_active', 1)))
-        self.bank.setMinimumWidth(340)
+        self.bank.setMinimumWidth(260)
         ltr(self.number, 220)
-        self.currency.setFixedWidth(120)
+        fit(self.currency, 120)
         for sp in (self.next_no, self.last_no):
             ltr(sp, 160)
             sp.setAlignment(Qt.AlignRight | Qt.AlignVCenter)

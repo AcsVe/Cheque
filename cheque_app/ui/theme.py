@@ -1,11 +1,12 @@
 """The application's look: one palette (the appace/SAS colours used by the user's other systems), one control height,
 an application stylesheet, line icons drawn from inline SVG, and small helpers that build labelled, accessible
 controls so every window is laid out the same way."""
-from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import (QAbstractItemView, QAbstractSpinBox, QApplication, QCalendarWidget, QComboBox,
-                               QDialogButtonBox, QGridLayout, QGroupBox, QLabel, QLineEdit, QPushButton, QToolBar,
-                               QWidget)
+from PySide6.QtCore import QByteArray, QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QFontMetrics, QGuiApplication, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import (QAbstractItemView, QAbstractScrollArea, QAbstractSpinBox, QApplication,
+                               QCalendarWidget, QComboBox, QDialogButtonBox, QFontComboBox, QFrame, QGridLayout,
+                               QGroupBox, QLabel, QLayout, QLineEdit, QPushButton, QScrollArea, QSizePolicy,
+                               QToolBar, QWidget)
 
 C = {
     'primary': '#0C67EC', 'deep': '#0847B0', 'soft': '#e8f1fe', 'text': '#1e293b', 'muted': '#64748b',
@@ -13,8 +14,27 @@ C = {
     'danger': '#b42318', 'danger_soft': '#fdecea', 'ok': '#166534', 'ok_soft': '#e7f6ee', 'warn': '#8a5a00',
     'warn_soft': '#fff4e0',
 }
-CONTROL_H = 34          # every line edit, combo box, spin box, date edit and button
-COMPACT_H = 28          # filters inside table headers
+CONTROL_H = 34          # the smallest height of a line edit, combo box, spin box, date edit and button
+COMPACT_H = 28          # the smallest height of a filter inside a table header
+REF_DIGIT = 7.5         # width of «0» in the 10 pt UI font the fixed widths below were drawn for
+
+
+def control_height(font_or_widget=None, compact=False):
+    """The height of a control for its font: never less than the design height, and always tall enough for the
+    font Windows really uses (larger text size, 125 % / 150 % display scaling, Arabic glyphs with tall marks)."""
+    if isinstance(font_or_widget, QWidget):
+        fm = font_or_widget.fontMetrics()
+    else:
+        fm = QFontMetrics(font_or_widget or QApplication.font())
+    if compact:
+        return max(COMPACT_H, fm.height() + 10)
+    return max(CONTROL_H, fm.height() + 16)
+
+
+def font_scale(widget=None):
+    """How much wider digits are than in the font the fixed widths were drawn for (1 = the same or narrower)."""
+    fm = widget.fontMetrics() if widget is not None else QFontMetrics(QApplication.font())
+    return max(1.0, fm.horizontalAdvance('0') / REF_DIGIT)
 
 STYLE = f"""
 QMainWindow, QDialog {{ background: {C['page']}; }}
@@ -208,7 +228,7 @@ def icon_button(icon_name, tip, kind='secondary'):
     b.setProperty('iconOnly', True)
     b.setIcon(icon(icon_name, '#ffffff' if kind == 'primary' else C['deep']))
     b.setIconSize(QSize(18, 18))
-    b.setFixedWidth(CONTROL_H)
+    b.setFixedWidth(control_height(b))     # kept square by the sizer once the real font is known
     b.setToolTip(tip)
     b.setCursor(Qt.PointingHandCursor)
     return a11y(b, tip)
@@ -222,12 +242,121 @@ def name_buttons(box: QDialogButtonBox):
     return box
 
 
+def fit(w, width):
+    """Size a field to its content: ``width`` (drawn for the 10 pt font) grows with the real font, and never cuts
+    the widest value, date or option the field can show."""
+    w.setProperty('fitWidth', int(width))
+    w.setFixedWidth(int(width))
+    return w
+
+
 def ltr(w, width=None):
-    """Numbers, dates and codes read left to right; ``width`` sizes the field to its content."""
+    """Numbers, dates and codes read left to right; ``width`` sizes the field to its content (see ``fit``)."""
     w.setLayoutDirection(Qt.LeftToRight)
     if width:
-        w.setFixedWidth(width)
+        fit(w, width)
     return w
+
+
+def scroll_page(page, horizontal=True):
+    """Put a page in a scroll area so a small screen or a large text size never hides the end of a window — the
+    mouse wheel (or the scroll bar) reaches every field and button."""
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(QFrame.NoFrame)
+    if not horizontal:
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    if not page.objectName():
+        page.setObjectName('page')
+    area.setWidget(page)
+    if page.accessibleName():
+        area.setAccessibleName(page.accessibleName())
+    return area
+
+
+class FlowLayout(QLayout):
+    """Buttons side by side that move to a new line when the window is too narrow, so none is cut off. Follows the
+    layout direction (right to left in Arabic)."""
+
+    def __init__(self, parent=None, spacing=8):
+        super().__init__(parent)
+        self._items = []
+        self._sp = spacing
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, i):
+        return self._items[i] if 0 <= i < len(self._items) else None
+
+    def takeAt(self, i):
+        return self._items.pop(i) if 0 <= i < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientations(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._place(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._place(rect, False)
+
+    def sizeHint(self):
+        w = sum(it.sizeHint().width() for it in self._items) + self._sp * max(0, len(self._items) - 1)
+        h = max((it.sizeHint().height() for it in self._items), default=0)
+        return QSize(w, h)
+
+    def minimumSize(self):
+        s = QSize()
+        for it in self._items:
+            s = s.expandedTo(it.minimumSize())
+        return s
+
+    def _place(self, rect, test):
+        owner = self.parentWidget()
+        rtl = (owner.layoutDirection() if owner is not None else QApplication.layoutDirection()) == Qt.RightToLeft
+        x, y, line_h = 0, rect.y(), 0
+        for it in self._items:
+            hint_ = it.sizeHint()
+            if x and x + hint_.width() > rect.width():
+                x, y, line_h = 0, y + line_h + self._sp, 0
+            if not test:
+                left = rect.right() - x - hint_.width() + 1 if rtl else rect.x() + x
+                it.setGeometry(QRect(QPoint(left, y), hint_))
+            x += hint_.width() + self._sp
+            line_h = max(line_h, hint_.height())
+        return y + line_h - rect.y()
+
+
+def flow_row(widgets, spacing=8):
+    """A widget holding ``widgets`` in a FlowLayout (they wrap onto more lines when there is not enough width)."""
+    box = QWidget()
+    lay = FlowLayout(box, spacing)
+    for w in widgets:
+        lay.addWidget(w)
+    sp = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+    sp.setHeightForWidth(True)
+    box.setSizePolicy(sp)
+    return box
+
+
+def fit_to_screen(win, width, height):
+    """Open ``win`` at ``width``×``height``, or smaller when the screen (after Windows scaling and the taskbar) is
+    smaller, so its title bar and buttons are never off the screen."""
+    scr = win.screen() if win.screen() is not None else QGuiApplication.primaryScreen()
+    if scr is None:
+        win.resize(width, height)
+        return
+    av = scr.availableGeometry()
+    win.resize(min(width, int(av.width() * 0.96)), min(height, int(av.height() * 0.92)))
 
 
 def card(title=None, desc=None):
@@ -290,11 +419,21 @@ def pick_font_family():
 
 
 class _ControlSizer(QObject):
-    """One height for every line edit, combo box, spin box, date edit and push button of the program's windows."""
+    """One height for every line edit, combo box, spin box, date edit and push button of the program's windows,
+    taken from the font so text is never cut; fields sized to their content grow with the font; and the mouse
+    wheel over a field that is not being edited scrolls the window instead of changing the value."""
 
     def eventFilter(self, obj, ev):
-        if ev.type() == QEvent.Polish and isinstance(obj, (QLineEdit, QComboBox, QAbstractSpinBox, QPushButton)):
+        t = ev.type()
+        if t == QEvent.Polish and isinstance(obj, (QLineEdit, QComboBox, QAbstractSpinBox, QPushButton)):
             self._size(obj)
+        elif t == QEvent.Wheel and isinstance(obj, (QComboBox, QAbstractSpinBox)) and not obj.hasFocus():
+            area = obj.parentWidget()
+            while area is not None and not isinstance(area, QAbstractScrollArea):
+                area = area.parentWidget()
+            if area is not None and not isinstance(area, QAbstractItemView):
+                QApplication.sendEvent(area.verticalScrollBar(), ev)
+            return True
         return False
 
     @staticmethod
@@ -308,7 +447,19 @@ class _ControlSizer(QObject):
             if type(parent).__name__ in ('QPrintPreviewDialog', 'QFileDialog', 'QPrintDialog', 'QPageSetupDialog'):
                 return
             parent = parent.parentWidget()
-        w.setFixedHeight(COMPACT_H if w.property('compact') else CONTROL_H)
+        h = control_height(w, bool(w.property('compact')))
+        w.setFixedHeight(h)
+        if isinstance(w, (QComboBox, QAbstractSpinBox)):
+            w.setFocusPolicy(Qt.StrongFocus)            # the wheel does not take focus (and change a value)
+        if w.property('iconOnly'):
+            w.setFixedWidth(h)
+            return
+        fw = w.property('fitWidth')
+        if fw:
+            need = int(fw * font_scale(w))
+            if isinstance(w, (QAbstractSpinBox, QComboBox)) and not isinstance(w, QFontComboBox):
+                need = max(need, w.sizeHint().width())   # the widest number, date or option
+            w.setFixedWidth(need)
 
 
 def _arrow_files():

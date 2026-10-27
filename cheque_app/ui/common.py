@@ -100,8 +100,8 @@ class FilterHeader(QHeaderView):
         self.adjust()
 
     def _extra(self):
-        from .theme import COMPACT_H
-        return (COMPACT_H + 8) if self.editors else 0
+        from .theme import control_height
+        return (control_height(self.editors[0] if self.editors else self, compact=True) + 8) if self.editors else 0
 
     def sizeHint(self):
         s = super().sizeHint()

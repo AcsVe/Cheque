@@ -185,3 +185,53 @@ def test_every_control_has_an_accessible_name(ctx):
             assert ed.view.accessibleDescription()
         finally:
             common.set_lang('ar')
+
+
+def test_nothing_clipped_on_small_screens_and_large_text(ctx):
+    """Windows at 125–150 % scaling or a larger text size: every field is tall and wide enough for its text, the
+    windows can shrink to a small laptop screen (the pages scroll instead of being cut), and the mouse wheel over a
+    field that is not being edited scrolls the page instead of changing the value."""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QAbstractSpinBox, QComboBox, QLineEdit, QPushButton, QWidget
+    from cheque_app.ui import theme
+    from cheque_app.ui.lists import AccountDialog, PayeeDialog
+    from cheque_app.ui.main_window import MainWindow
+    from cheque_app.ui.template_editor import TemplateEditor
+    app = QApplication.instance()
+    old = app.font()
+    theme.apply_theme(app)
+    big = app.font()
+    big.setPointSizeF(15)
+    app.setFont(big)
+    MainWindow.showEvent = lambda self, e: None
+    try:
+        w = MainWindow(ctx)
+        windows = [w, TemplateEditor(None, ctx, ctx.db.banks()[0]['id']), AccountDialog(w, ctx.db), PayeeDialog(w)]
+        clipped = []
+        for win in windows:
+            win.show()
+            app.processEvents()
+            ms = win.minimumSizeHint()
+            assert ms.width() <= 900 and ms.height() <= 480, (type(win).__name__, ms)
+            for x in win.findChildren(QWidget):
+                if not isinstance(x, (QLineEdit, QComboBox, QAbstractSpinBox, QPushButton)) or not x.isVisibleTo(win):
+                    continue
+                if x.objectName().startswith('qt_') or isinstance(x.parentWidget(), (QComboBox, QAbstractSpinBox)):
+                    continue
+                sh = x.sizeHint()
+                if QWidget.height(x) < sh.height() - 1 or (
+                        isinstance(x, (QAbstractSpinBox, QComboBox)) and QWidget.width(x) < sh.width() - 2):
+                    clipped.append(f'{type(win).__name__}: {type(x).__name__} «{x.accessibleName()}»')
+        assert not clipped, '\n'.join(clipped)
+        num = w.issue.number
+        before = num.value()
+        w.issue.amount.setFocus()
+        ev = QWheelEvent(QPointF(5, 5), QPointF(num.mapToGlobal(QPoint(5, 5))), QPoint(0, 0), QPoint(0, -120),
+                         Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+        QApplication.sendEvent(num, ev)
+        assert num.value() == before
+        for win in windows:
+            win.close()
+    finally:
+        app.setFont(old)
