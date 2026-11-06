@@ -3,7 +3,7 @@
 | البند | القيمة |
 |---|---|
 | المستودع | `AcsVe/Cheque` |
-| التحميل | `https://github.com/AcsVe/Cheque/releases/download/latest/ChequePrinterSetup.exe` |
+| التحميل | `https://github.com/AcsVe/downloads/releases/download/cheque-latest/ChequePrinterSetup.exe` |
 | التقنية | Python 3.12 + PySide6 (Qt 6) + SQLite، يُبنى بـ PyInstaller ويُغلَّف بـ Inno Setup |
 | البيانات | `%ProgramData%\ChequePrinter` (القاعدة `cheques.db`، `backups\`، `backgrounds\`، `license.json`) |
 | المتطلبات | [`docs/Requirements.md`](Requirements.md) |
